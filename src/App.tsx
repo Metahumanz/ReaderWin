@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import Database from "@tauri-apps/plugin-sql";
 import { open } from "@tauri-apps/plugin-dialog";
 
@@ -76,6 +76,12 @@ function App() {
   const [bgImage, setBgImage] = useState("");
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, bookId: number } | null>(null);
   const [importing, setImporting] = useState(false);
+  const progress = chapters.length > 0 ? Math.round((currentChapterIndex / Math.max(1, chapters.length - 1)) * 100) : 0;
+  const [tempProgress, setTempProgress] = useState(0);
+
+  useEffect(() => {
+    setTempProgress(progress);
+  }, [progress]);
 
   useEffect(() => {
     const initDb = async () => {
@@ -249,7 +255,8 @@ function App() {
       const nextIdx = currentChapterIndex + 1;
       setCurrentChapterIndex(nextIdx);
       loadChapter(chapters[nextIdx].id);
-      window.scrollTo(0, 0);
+      const el = document.getElementById('viewer-content');
+      if (el) el.scrollLeft = 0;
     }
   };
 
@@ -258,7 +265,8 @@ function App() {
       const prevIdx = currentChapterIndex - 1;
       setCurrentChapterIndex(prevIdx);
       loadChapter(chapters[prevIdx].id);
-      window.scrollTo(0, 0);
+      const el = document.getElementById('viewer-content');
+      if (el) el.scrollLeft = 0;
     }
   };
 
@@ -406,136 +414,143 @@ function App() {
           )}
         </div>
 
-        {/* Reader Settings Menu */}
+        {/* Reader Settings Menu Overlay */}
         {readerMenuOpen && (
-          <div className="fixed inset-x-0 bottom-0 z-[100] p-6 animate-in slide-in-from-bottom duration-500">
-            <div className="max-w-2xl mx-auto bg-slate-900/95 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-10 shadow-2xl">
-              <div className="grid grid-cols-2 gap-10">
-                <div className="space-y-8">
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex justify-between">
-                      <span>字体大小</span>
-                      <span className="text-indigo-400 font-bold">{fontSize}</span>
-                    </label>
-                    <div className="flex items-center gap-4">
-                      <button onClick={() => { setFontSize(s => Math.max(12, s - 1)); saveSetting('font_size', (fontSize - 1).toString()); }} className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center font-bold">-</button>
-                      <input type="range" min="12" max="64" value={fontSize} onChange={(e) => {
-                        const val = parseInt(e.target.value);
-                        setFontSize(val);
-                        saveSetting('font_size', val.toString());
-                      }} className="flex-1 accent-indigo-500 h-1.5" />
-                      <button onClick={() => { setFontSize(s => Math.min(64, s + 1)); saveSetting('font_size', (fontSize + 1).toString()); }} className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center font-bold">+</button>
+          <div className="fixed inset-0 z-[100] flex flex-col justify-end">
+            <div className="absolute inset-0 bg-black/20" onClick={() => setReaderMenuOpen(false)} />
+            <div className="relative p-6 animate-in slide-in-from-bottom duration-500">
+              <div className="max-w-2xl mx-auto bg-slate-900/95 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-10 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                <div className="grid grid-cols-2 gap-10">
+                  <div className="space-y-8">
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex justify-between">
+                        <span>字体大小</span>
+                        <span className="text-indigo-400 font-bold">{fontSize}</span>
+                      </label>
+                      <div className="flex items-center gap-4">
+                        <button onClick={() => { setFontSize(s => Math.max(12, s - 1)); saveSetting('font_size', (fontSize - 1).toString()); }} className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center font-bold">-</button>
+                        <input type="range" min="12" max="64" value={fontSize} onChange={(e) => {
+                          const val = parseInt(e.target.value);
+                          setFontSize(val);
+                          saveSetting('font_size', val.toString());
+                        }} className="flex-1 accent-indigo-500 h-1.5" />
+                        <button onClick={() => { setFontSize(s => Math.min(64, s + 1)); saveSetting('font_size', (fontSize + 1).toString()); }} className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center font-bold">+</button>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex justify-between">
+                        <span>字符间距</span>
+                        <span className="text-indigo-400 font-bold">{letterSpacing}</span>
+                      </label>
+                      <input type="range" min="-2" max="10" step="0.5" value={letterSpacing} onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setLetterSpacing(val);
+                        saveSetting('letter_spacing', val.toString());
+                      }} className="w-full accent-indigo-500 h-1.5" />
                     </div>
                   </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex justify-between">
-                      <span>字符间距</span>
-                      <span className="text-indigo-400 font-bold">{letterSpacing}</span>
-                    </label>
-                    <input type="range" min="-2" max="10" step="0.5" value={letterSpacing} onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      setLetterSpacing(val);
-                      saveSetting('letter_spacing', val.toString());
-                    }} className="w-full accent-indigo-500 h-1.5" />
+                  <div className="space-y-8">
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex justify-between">
+                        <span>行高</span>
+                        <span className="text-indigo-400 font-bold">{lineHeight}</span>
+                      </label>
+                      <input type="range" min="1" max="4" step="0.1" value={lineHeight} onChange={(e) => {
+                        const val = parseFloat(e.target.value);
+                        setLineHeight(val);
+                        saveSetting('line_height', val.toString());
+                      }} className="w-full accent-indigo-500 h-1.5" />
+                    </div>
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex justify-between">
+                        <span>内容页边距</span>
+                        <span className="text-indigo-400 font-bold">{contentWidth}px</span>
+                      </label>
+                      <input type="range" min="400" max="1400" step="50" value={contentWidth} onChange={(e) => {
+                        const val = parseInt(e.target.value);
+                        setContentWidth(val);
+                        saveSetting('content_width', val.toString());
+                      }} className="w-full accent-indigo-500 h-1.5" />
+                    </div>
                   </div>
                 </div>
-                <div className="space-y-8">
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex justify-between">
-                      <span>行高</span>
-                      <span className="text-indigo-400 font-bold">{lineHeight}</span>
-                    </label>
-                    <input type="range" min="1" max="4" step="0.1" value={lineHeight} onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      setLineHeight(val);
-                      saveSetting('line_height', val.toString());
-                    }} className="w-full accent-indigo-500 h-1.5" />
-                  </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex justify-between">
-                      <span>内容页边距</span>
-                      <span className="text-indigo-400 font-bold">{contentWidth}px</span>
-                    </label>
-                    <input type="range" min="400" max="1400" step="50" value={contentWidth} onChange={(e) => {
-                      const val = parseInt(e.target.value);
-                      setContentWidth(val);
-                      saveSetting('content_width', val.toString());
-                    }} className="w-full accent-indigo-500 h-1.5" />
-                  </div>
-                </div>
-              </div>
-              {/* Progress & Chapter Navigation */}
-              <div className="mt-8 pt-8 border-t border-white/5 space-y-4">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex justify-between px-2">
-                  <span>阅读进度</span>
-                  <span className="text-indigo-400 font-bold">{progress}%</span>
-                </label>
-                <div className="flex items-center gap-6">
-                  <button 
-                    onClick={prevChapter}
-                    disabled={currentChapterIndex <= 0}
-                    className="w-12 h-12 bg-white/5 hover:bg-white/10 disabled:opacity-30 rounded-2xl flex items-center justify-center transition-all active:scale-90"
-                  >
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M15 18l-6-6 6-6" /></svg>
-                  </button>
-                  
-                  <div className="flex-1 relative group">
-                    <input 
-                      type="range" 
-                      min="0" 
-                      max="100" 
-                      value={progress} 
-                      onChange={() => {}} // Controlled by confirmation
-                      onMouseUp={async (e: any) => {
-                        const newPercent = parseInt(e.target.value);
-                        if (newPercent === progress) return;
-                        
-                        if (confirm(`确定要跳转到全书的 ${newPercent}% 附近吗？`)) {
-                          const targetIdx = Math.min(
-                            chapters.length - 1,
-                            Math.floor((newPercent / 100) * chapters.length)
-                          );
-                          setCurrentChapterIndex(targetIdx);
-                          await loadChapter(chapters[targetIdx].id);
-                          const el = document.getElementById('viewer-content');
-                          if (el) el.scrollLeft = 0;
-                        }
-                      }}
-                      className="w-full accent-indigo-500 h-2 bg-white/10 rounded-full cursor-pointer" 
-                    />
-                  </div>
 
-                  <button 
-                    onClick={nextChapter}
-                    disabled={currentChapterIndex >= chapters.length - 1}
-                    className="w-12 h-12 bg-white/5 hover:bg-white/10 disabled:opacity-30 rounded-2xl flex items-center justify-center transition-all active:scale-90"
-                  >
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M9 18l6-6-6-6" /></svg>
+                {/* Progress & Chapter Navigation */}
+                <div className="mt-8 pt-8 border-t border-white/5 space-y-4">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex justify-between px-2">
+                    <span>阅读进度</span>
+                    <span className="text-indigo-400 font-bold">{tempProgress}%</span>
+                  </label>
+                  <div className="flex items-center gap-6">
+                    <button
+                      onClick={prevChapter}
+                      disabled={currentChapterIndex <= 0}
+                      className="w-12 h-12 bg-white/5 hover:bg-white/10 disabled:opacity-30 rounded-2xl flex items-center justify-center transition-all active:scale-90"
+                    >
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M15 18l-6-6 6-6" /></svg>
+                    </button>
+
+                    <div className="flex-1 relative group">
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={tempProgress}
+                        onChange={(e) => setTempProgress(parseInt(e.target.value))}
+                        onMouseUp={async (e: any) => {
+                          const newPercent = parseInt(e.target.value);
+                          if (newPercent === progress) return;
+
+                          if (confirm(`确定要跳转到全书的 ${newPercent}% 附近吗？`)) {
+                            const targetIdx = Math.min(
+                              chapters.length - 1,
+                              Math.floor((newPercent / 100) * chapters.length)
+                            );
+                            setCurrentChapterIndex(targetIdx);
+                            await loadChapter(chapters[targetIdx].id);
+                            const el = document.getElementById('viewer-content');
+                            if (el) el.scrollLeft = 0;
+                          } else {
+                            setTempProgress(progress);
+                          }
+                        }}
+                        className="w-full accent-indigo-500 h-2 bg-white/10 rounded-full cursor-pointer"
+                      />
+                    </div>
+
+                    <button
+                      onClick={nextChapter}
+                      disabled={currentChapterIndex >= chapters.length - 1}
+                      className="w-12 h-12 bg-white/5 hover:bg-white/10 disabled:opacity-30 rounded-2xl flex items-center justify-center transition-all active:scale-90"
+                    >
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M9 18l6-6-6-6" /></svg>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-10 flex gap-4">
+                  <button onClick={() => {
+                    const nextFont = fontFamily.includes("serif") ? "system-ui, sans-serif" : "'Georgia', serif";
+                    setFontFamily(nextFont);
+                    saveSetting('font_family', nextFont);
+                  }} className="flex-1 py-4 bg-white/5 hover:bg-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all">
+                    切换字体库
+                  </button>
+                  <button onClick={async () => {
+                    const { open } = await import("@tauri-apps/plugin-dialog");
+                    const selected = await open({ multiple: false, filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }] });
+                    if (selected && typeof selected === 'string') {
+                      const imageSrc = convertFileSrc(selected);
+                      setBgImage(imageSrc);
+                      saveSetting('bg_image', imageSrc);
+                    }
+                  }} className="flex-1 py-4 bg-white/5 hover:bg-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all">
+                    自定义背景
+                  </button>
+                  <button onClick={() => setReaderMenuOpen(false)} className="px-10 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-indigo-600/20">
+                    完成设定
                   </button>
                 </div>
-              </div>
-
-              <div className="mt-10 flex gap-4">
-                <button onClick={() => {
-                  const nextFont = fontFamily.includes("serif") ? "system-ui, sans-serif" : "'Georgia', serif";
-                  setFontFamily(nextFont);
-                  saveSetting('font_family', nextFont);
-                }} className="flex-1 py-4 bg-white/5 hover:bg-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all">
-                  切换字体库
-                </button>
-                <button onClick={async () => {
-                  const { open } = await import("@tauri-apps/plugin-dialog");
-                  const selected = await open({ multiple: false, filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }] });
-                  if (selected && typeof selected === 'string') {
-                    setBgImage(`https://asset.localhost/${selected.replace(/\\/g, '/')}`);
-                    saveSetting('bg_image', `https://asset.localhost/${selected.replace(/\\/g, '/')}`);
-                  }
-                }} className="flex-1 py-4 bg-white/5 hover:bg-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all">
-                  自定义背景
-                </button>
-                <button onClick={() => setReaderMenuOpen(false)} className="px-10 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-indigo-600/20">
-                  完成设定
-                </button>
               </div>
             </div>
           </div>
