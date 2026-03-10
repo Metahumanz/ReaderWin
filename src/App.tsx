@@ -464,6 +464,57 @@ function App() {
                   </div>
                 </div>
               </div>
+              {/* Progress & Chapter Navigation */}
+              <div className="mt-8 pt-8 border-t border-white/5 space-y-4">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex justify-between px-2">
+                  <span>阅读进度</span>
+                  <span className="text-indigo-400 font-bold">{progress}%</span>
+                </label>
+                <div className="flex items-center gap-6">
+                  <button 
+                    onClick={prevChapter}
+                    disabled={currentChapterIndex <= 0}
+                    className="w-12 h-12 bg-white/5 hover:bg-white/10 disabled:opacity-30 rounded-2xl flex items-center justify-center transition-all active:scale-90"
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M15 18l-6-6 6-6" /></svg>
+                  </button>
+                  
+                  <div className="flex-1 relative group">
+                    <input 
+                      type="range" 
+                      min="0" 
+                      max="100" 
+                      value={progress} 
+                      onChange={() => {}} // Controlled by confirmation
+                      onMouseUp={async (e: any) => {
+                        const newPercent = parseInt(e.target.value);
+                        if (newPercent === progress) return;
+                        
+                        if (confirm(`确定要跳转到全书的 ${newPercent}% 附近吗？`)) {
+                          const targetIdx = Math.min(
+                            chapters.length - 1,
+                            Math.floor((newPercent / 100) * chapters.length)
+                          );
+                          setCurrentChapterIndex(targetIdx);
+                          await loadChapter(chapters[targetIdx].id);
+                          const el = document.getElementById('viewer-content');
+                          if (el) el.scrollLeft = 0;
+                        }
+                      }}
+                      className="w-full accent-indigo-500 h-2 bg-white/10 rounded-full cursor-pointer" 
+                    />
+                  </div>
+
+                  <button 
+                    onClick={nextChapter}
+                    disabled={currentChapterIndex >= chapters.length - 1}
+                    className="w-12 h-12 bg-white/5 hover:bg-white/10 disabled:opacity-30 rounded-2xl flex items-center justify-center transition-all active:scale-90"
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M9 18l6-6-6-6" /></svg>
+                  </button>
+                </div>
+              </div>
+
               <div className="mt-10 flex gap-4">
                 <button onClick={() => {
                   const nextFont = fontFamily.includes("serif") ? "system-ui, sans-serif" : "'Georgia', serif";
@@ -503,15 +554,13 @@ function App() {
                 {chapters.map((chap, idx) => (
                   <button
                     key={chap.id}
-                    onClick={async () => { // Made onClick async
+                    onClick={async () => {
                       setCurrentChapterIndex(idx);
-                      // loadChapter(chap.id); // Original call, now integrated below
                       const el = document.getElementById('viewer-content');
                       if (el) el.scrollLeft = 0;
-                      if (!db) return;
-
-                      // For local books, we just set content
-                      setContent({ title: chapters[idx].title, body: chapters[idx].body || '' });
+                      await loadChapter(chap.id);
+                      setTocOpen(false);
+                      setReaderMenuOpen(false);
                     }}
                     className={`w-full text-left px-5 py-4 rounded-2xl transition-all mb-2 flex items-center gap-4 ${idx === currentChapterIndex ? 'bg-indigo-500 text-white font-bold shadow-lg shadow-indigo-500/20' : 'hover:bg-white/5 text-slate-400 font-medium'}`}
                   >
