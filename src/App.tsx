@@ -101,8 +101,49 @@ function App() {
     // Disable default context menu
     const handleContextMenu = (e: MouseEvent) => e.preventDefault();
     document.addEventListener("contextmenu", handleContextMenu);
-    return () => document.removeEventListener("contextmenu", handleContextMenu);
+
+    // Handle Resize
+    const handleResize = () => {
+      const el = document.getElementById('viewer-content');
+      if (el) {
+        // Just snapping to the nearest page boundary
+        const page = Math.round(el.scrollLeft / el.clientWidth);
+        el.scrollLeft = page * el.clientWidth;
+      }
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      document.removeEventListener("contextmenu", handleContextMenu);
+      window.removeEventListener('resize', handleResize);
+    };
   }, []);
+
+  // Sync ToC Scroll
+  useEffect(() => {
+    if (tocOpen) {
+      setTimeout(() => {
+        const activeItem = document.getElementById(`toc-item-${currentChapterIndex}`);
+        if (activeItem) {
+          activeItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 300);
+    }
+  }, [tocOpen, currentChapterIndex]);
+
+  // Save detailed progress
+  useEffect(() => {
+    if (!readerOpen || !currentBook || !db) return;
+
+    const saver = setInterval(async () => {
+      const el = document.getElementById('viewer-content');
+      if (el) {
+        await db.execute("UPDATE books SET progress_offset = $1 WHERE id = $2", [Math.round(el.scrollLeft), currentBook.id]);
+      }
+    }, 5000);
+
+    return () => clearInterval(saver);
+  }, [readerOpen, currentBook, db]);
 
   const fetchBooks = async (database = db) => {
     if (!database) return;
@@ -225,11 +266,11 @@ function App() {
       setChapters(rows);
       const savedIdx = book.progress_index || 0;
       setCurrentChapterIndex(savedIdx);
-      await loadChapter(rows[savedIdx].id, db);
+      await loadChapter(rows[savedIdx].id, true, db);
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
-  const loadChapter = async (chapterId: number, database = db) => {
+  const loadChapter = async (chapterId: number, restoreOffset = false, database = db) => {
     if (!database) return;
     setLoading(true);
     try {
@@ -245,6 +286,15 @@ function App() {
         const currentIdx = chapters.findIndex(c => c.id === chapterId);
         if (currentIdx !== -1 && currentBook) {
           await database.execute("UPDATE books SET progress_index = $1, last_read = CURRENT_TIMESTAMP WHERE id = $2", [currentIdx, currentBook.id]);
+
+          if (restoreOffset) {
+            setTimeout(() => {
+              const el = document.getElementById('viewer-content');
+              if (el && currentBook.progress_offset) {
+                el.scrollLeft = currentBook.progress_offset;
+              }
+            }, 100);
+          }
         }
       }
     } catch (err) { console.error(err); } finally { setLoading(false); }
@@ -569,6 +619,7 @@ function App() {
                 {chapters.map((chap, idx) => (
                   <button
                     key={chap.id}
+                    id={`toc-item-${idx}`}
                     onClick={async () => {
                       setCurrentChapterIndex(idx);
                       const el = document.getElementById('viewer-content');

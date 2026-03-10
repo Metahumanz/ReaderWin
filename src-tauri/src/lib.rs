@@ -190,6 +190,12 @@ pub fn run() {
             description: "add_source_id_to_books",
             sql: "ALTER TABLE books ADD COLUMN source_id INTEGER;",
             kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 7,
+            description: "add_progress_offset_to_books",
+            sql: "ALTER TABLE books ADD COLUMN progress_offset INTEGER DEFAULT 0;",
+            kind: MigrationKind::Up,
         }
     ];
 

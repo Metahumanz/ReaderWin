@@ -9,6 +9,11 @@
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
+
+  .prose p {
+    text-indent: 2em;
+    margin-bottom: 0.5em;
+  }
 }
 
 :root {
