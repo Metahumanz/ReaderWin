@@ -4,6 +4,8 @@ use std::fs;
 use regex::Regex;
 use tauri::{AppHandle, Manager, Runtime};
 use encoding_rs::{GB18030, UTF_8};
+use epub::doc::EpubDoc;
+use std::io::Cursor;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChapterContent {
@@ -49,6 +51,25 @@ async fn parse_txt(path: String) -> Result<Vec<ChapterContent>, String> {
         chapters.push(ChapterContent {
             title: current_title,
             body: last_chunk.replace("\n", "<br/>").to_string(),
+        });
+    }
+
+    Ok(chapters)
+}
+
+#[tauri::command]
+async fn parse_epub(path: String) -> Result<Vec<ChapterContent>, String> {
+    let mut doc = EpubDoc::new(&path).map_err(|e| e.to_string())?;
+    let mut chapters = Vec::new();
+
+    let toc = doc.toc.clone();
+    for entry in toc {
+        let content = doc.get_resource_str_by_id(&entry.content.to_str().unwrap().split('#').next().unwrap())
+            .map_err(|e| e.to_string())?;
+        
+        chapters.push(ChapterContent {
+            title: entry.title,
+            body: content,
         });
     }
 
@@ -168,7 +189,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![parse_txt, webdav_sync])
+        .invoke_handler(tauri::generate_handler![parse_txt, parse_epub, webdav_sync])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

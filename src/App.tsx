@@ -168,24 +168,45 @@ function App() {
     }
   };
 
-  const handleImportTxt = async () => {
+  const handleImportBook = async () => {
     try {
-      const selected = await open({ multiple: false, filters: [{ name: 'Text', extensions: ['txt'] }] });
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: 'Books', extensions: ['txt', 'epub'] }]
+      });
       if (selected && typeof selected === 'string') {
-        setLoading(true);
-        const parsedChapters: any[] = await invoke("parse_txt", { path: selected });
-        const fileName = selected.split(/\\|\//).pop() || "未知书籍";
-        if (db) {
-          const res = await db.execute("INSERT INTO books (title, path, author) VALUES ($1, $2, $3)", [fileName, selected, "本地导入"]);
-          const bookId = res.lastInsertId;
-          for (let i = 0; i < parsedChapters.length; i++) {
-            await db.execute("INSERT INTO chapters (book_id, title, body, order_index) VALUES ($1, $2, $3, $4)", [bookId, parsedChapters[i].title, parsedChapters[i].body, i]);
+        const isEpub = selected.toLowerCase().endsWith('.epub');
+        setImporting(true);
+        try {
+          const command = isEpub ? "parse_epub" : "parse_txt";
+          const parsedChapters: any[] = await invoke(command, { path: selected });
+          const fileName = selected.split(/\\|\//).pop() || "未知书籍";
+
+          if (db) {
+            const res = await db.execute(
+              "INSERT INTO books (title, path, author) VALUES ($1, $2, $3)",
+              [fileName, selected, isEpub ? "EPUB 导入" : "TXT 导入"]
+            );
+            const bookId = res.lastInsertId;
+            for (let i = 0; i < parsedChapters.length; i++) {
+              await db.execute(
+                "INSERT INTO chapters (book_id, title, body, order_index) VALUES ($1, $2, $3, $4)",
+                [bookId, parsedChapters[i].title, parsedChapters[i].body, i]
+              );
+            }
+            await fetchBooks(db);
+            alert(`导入成功！共 ${parsedChapters.length} 章。`);
           }
-          await fetchBooks(db);
-          alert(`导入成功！共 ${parsedChapters.length} 章。`);
+        } catch (err) {
+          alert("解析失败: " + err);
+        } finally {
+          setImporting(false);
         }
       }
-    } catch (err) { alert(err); } finally { setLoading(false); }
+    } catch (err) {
+      alert(err);
+      setImporting(false);
+    }
   };
 
   const openReader = async (book: any) => {
@@ -211,29 +232,7 @@ function App() {
         let { title, body, link } = rows[0];
 
         if (link && !body) {
-          // Fetch source rules for this book
-          if (!currentBook) throw new Error("No book selected");
-          const bookSources = await database.select<any[]>(
-            "SELECT * FROM sources WHERE id = ?",
-            [currentBook.source_id]
-          );
-          const source = bookSources[0];
-
-          try {
-            const res = await invoke<any>("fetch_chapter", {
-              url: link,
-              rule: {
-                title_selector: source?.content_title_selector || "h1",
-                body_selector: source?.content_body_selector || "div"
-              }
-            });
-            body = res.body;
-            // Cache the body
-            await database.execute("UPDATE chapters SET body = ? WHERE id = ?", [body, chapterId]);
-          } catch (err) {
-            console.error("Fetch content failed:", err);
-            body = "加载失败，请检查网络或书源规则。";
-          }
+          body = "此章节内容为网络链接，当前版本已关闭网络解析功能。";
         }
 
         setContent({ title, body });
@@ -579,10 +578,10 @@ function App() {
             <p className="text-slate-400 font-medium">{activeTab === "bookshelf" ? `你当前有 ${books.length} 本藏书` : activeTab === "explore" ? "从数千个书源中寻找灵感" : "账号同步与个性化配置"}</p>
           </div>
           <div className="flex gap-4">
-            <button onClick={handleImportTxt} disabled={importing} className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold shadow-lg active:scale-95 transition-all outline-none disabled:opacity-50 disabled:cursor-not-allowed">
+            <button onClick={handleImportBook} disabled={importing} className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-semibold shadow-lg active:scale-95 transition-all outline-none disabled:opacity-50 disabled:cursor-not-allowed">
               <div className="flex items-center gap-2">
                 <AddIcon />
-                <span>导入本地书籍</span>
+                <span>导入本地书籍 (TXT/EPUB)</span>
               </div>
             </button>
           </div>
@@ -600,9 +599,9 @@ function App() {
                   <BookCard book={book} onClick={() => !importing && openReader(book)} />
                 </div>
               ))}
-              <div onClick={!importing ? handleImportTxt : undefined} className={`aspect-[3/4] border-2 border-dashed border-slate-700/50 rounded-3xl flex flex-col items-center justify-center gap-4 text-slate-500 transition-all cursor-pointer group shadow-inner ${importing ? 'opacity-50 cursor-not-allowed' : 'hover:border-indigo-500/50 hover:text-indigo-400 hover:bg-indigo-500/5'}`}>
+              <div onClick={!importing ? handleImportBook : undefined} className={`aspect-[3/4] border-2 border-dashed border-slate-700/50 rounded-3xl flex flex-col items-center justify-center gap-4 text-slate-500 transition-all cursor-pointer group shadow-inner ${importing ? 'opacity-50 cursor-not-allowed' : 'hover:border-indigo-500/50 hover:text-indigo-400 hover:bg-indigo-500/5'}`}>
                 <div className={`p-4 rounded-2xl bg-slate-800 shadow-lg ${!importing && 'group-hover:bg-indigo-500/10'}`}><AddIcon /></div>
-                <span className="font-bold text-sm">{importing ? "正在处理..." : "添加本地书籍"}</span>
+                <span className="font-bold text-sm">{importing ? "正在解析书籍..." : "导入 TXT / EPUB"}</span>
               </div>
             </div>
           )}

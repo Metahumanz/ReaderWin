@@ -30,4 +30,5 @@ tauri-plugin-dialog = "2.6.0"
 tauri-plugin-fs = "2.4.5"
 regex = "1.12.3"
 encoding_rs = "0.8.35"
+epub = "1.2.0"
 
