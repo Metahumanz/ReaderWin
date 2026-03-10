@@ -1,6 +1,4 @@
 use serde::{Deserialize, Serialize};
-use scraper::{Html, Selector};
-use reqwest::header::{HeaderMap, USER_AGENT};
 use tauri_plugin_sql::{Migration, MigrationKind};
 use std::fs;
 use regex::Regex;
@@ -13,44 +11,7 @@ pub struct ChapterContent {
     pub body: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct ScrapeRule {
-    pub title_selector: String,
-    pub body_selector: String,
-}
-
-#[tauri::command]
-async fn fetch_chapter(url: String, rule: ScrapeRule) -> Result<ChapterContent, String> {
-    let mut headers = HeaderMap::new();
-    headers.insert(USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36".parse().unwrap());
-
-    let client = reqwest::Client::builder()
-        .default_headers(headers)
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let response = client.get(&url).send().await.map_err(|e| e.to_string())?;
-    let html_content = response.text().await.map_err(|e| e.to_string())?;
-
-    let document = Html::parse_document(&html_content);
-    
-    let title_selector = Selector::parse(&rule.title_selector).map_err(|_| "Invalid title selector")?;
-    let body_selector = Selector::parse(&rule.body_selector).map_err(|_| "Invalid body selector")?;
-
-    let title = document
-        .select(&title_selector)
-        .next()
-        .map(|el| el.text().collect::<Vec<_>>().join(""))
-        .unwrap_or_else(|| "Unknown Title".to_string());
-
-    let body = document
-        .select(&body_selector)
-        .next()
-        .map(|el| el.html()) 
-        .unwrap_or_else(|| "No content found".to_string());
-
-    Ok(ChapterContent { title, body })
-}
+// --- Commands ---
 
 #[tauri::command]
 async fn parse_txt(path: String) -> Result<Vec<ChapterContent>, String> {
@@ -123,121 +84,7 @@ async fn webdav_sync<R: Runtime>(
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BookSource {
-    pub id: Option<i64>,
-    pub name: String,
-    pub url: String,
-    pub search_url: String, // e.g. "https://example.com/search?key={key}"
-    pub search_list_selector: String,
-    pub search_title_selector: String,
-    pub search_author_selector: String,
-    pub search_link_selector: String,
-    pub search_cover_selector: String,
-    pub chapter_list_selector: String,
-    pub chapter_title_selector: String,
-    pub chapter_link_selector: String,
-    pub content_title_selector: String,
-    pub content_body_selector: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct SearchResult {
-    pub title: String,
-    pub author: String,
-    pub link: String,
-    pub cover: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct ChapterLink {
-    pub title: String,
-    pub link: String,
-}
-
-#[tauri::command]
-async fn fetch_chapters(url: String, source: BookSource) -> Result<Vec<ChapterLink>, String> {
-    let mut headers = HeaderMap::new();
-    headers.insert(USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36".parse().unwrap());
-
-    let client = reqwest::Client::builder()
-        .default_headers(headers)
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let response = client.get(&url).send().await.map_err(|e| e.to_string())?;
-    let html_content = response.text().await.map_err(|e| e.to_string())?;
-
-    let document = Html::parse_document(&html_content);
-    let list_selector = Selector::parse(&source.chapter_list_selector).map_err(|_| "Invalid list selector")?;
-    let title_selector = Selector::parse(&source.chapter_title_selector).map_err(|_| "Invalid chapter title selector")?;
-    let link_selector = Selector::parse(&source.chapter_link_selector).map_err(|_| "Invalid chapter link selector")?;
-
-    let mut results = Vec::new();
-    for element in document.select(&list_selector) {
-        let title = element.select(&title_selector).next().map(|el| el.text().collect::<Vec<_>>().join("")).unwrap_or_default();
-        let link = element.select(&link_selector).next().map(|el| el.attr("href").unwrap_or_default().to_string()).unwrap_or_default();
-        
-        let full_link = if link.starts_with('/') {
-            let base = reqwest::Url::parse(&source.url).map_err(|e| e.to_string())?;
-            base.join(&link).map_err(|e| e.to_string())?.to_string()
-        } else if !link.is_empty() && !link.starts_with("http") {
-             // Handle relative to page url
-             let base = reqwest::Url::parse(&url).map_err(|e| e.to_string())?;
-             base.join(&link).map_err(|e| e.to_string())?.to_string()
-        } else {
-            link
-        };
-        
-        if !title.is_empty() {
-            results.push(ChapterLink { title, link: full_link });
-        }
-    }
-
-    Ok(results)
-}
-
-#[tauri::command]
-async fn search_books(query: String, source: BookSource) -> Result<Vec<SearchResult>, String> {
-    let url = source.search_url.replace("{key}", &query);
-    let mut headers = HeaderMap::new();
-    headers.insert(USER_AGENT, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36".parse().unwrap());
-
-    let client = reqwest::Client::builder()
-        .default_headers(headers)
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let response = client.get(&url).send().await.map_err(|e| e.to_string())?;
-    let html_content = response.text().await.map_err(|e| e.to_string())?;
-
-    let document = Html::parse_document(&html_content);
-    let list_selector = Selector::parse(&source.search_list_selector).map_err(|_| "Invalid list selector")?;
-    let title_selector = Selector::parse(&source.search_title_selector).map_err(|_| "Invalid title selector")?;
-    let author_selector = Selector::parse(&source.search_author_selector).map_err(|_| "Invalid author selector")?;
-    let link_selector = Selector::parse(&source.search_link_selector).map_err(|_| "Invalid link selector")?;
-    let cover_selector = Selector::parse(&source.search_cover_selector).map_err(|_| "Invalid cover selector")?;
-
-    let mut results = Vec::new();
-    for element in document.select(&list_selector) {
-        let title = element.select(&title_selector).next().map(|el| el.text().collect::<Vec<_>>().join("")).unwrap_or_default();
-        let author = element.select(&author_selector).next().map(|el| el.text().collect::<Vec<_>>().join("")).unwrap_or_default();
-        let link = element.select(&link_selector).next().map(|el| el.attr("href").unwrap_or_default().to_string()).unwrap_or_default();
-        // Resolve relative links
-        let full_link = if link.starts_with('/') {
-            let base = reqwest::Url::parse(&source.url).map_err(|e| e.to_string())?;
-            base.join(&link).map_err(|e| e.to_string())?.to_string()
-        } else {
-            link
-        };
-        
-        let cover = element.select(&cover_selector).next().map(|el| el.attr("src").unwrap_or_else(|| el.attr("data-src").unwrap_or_default()).to_string()).unwrap_or_default();
-        
-        results.push(SearchResult { title, author, link: full_link, cover });
-    }
-
-    Ok(results)
-}
+// Legacy source code removed
 
 pub fn run() {
     let migrations = vec![
@@ -321,7 +168,7 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![fetch_chapter, parse_txt, webdav_sync, search_books, fetch_chapters])
+        .invoke_handler(tauri::generate_handler![parse_txt, webdav_sync])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
