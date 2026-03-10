@@ -5,7 +5,6 @@ use regex::Regex;
 use tauri::{AppHandle, Manager, Runtime};
 use encoding_rs::{GB18030, UTF_8};
 use epub::doc::EpubDoc;
-use std::io::Cursor;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChapterContent {
@@ -62,15 +61,17 @@ async fn parse_epub(path: String) -> Result<Vec<ChapterContent>, String> {
     let mut doc = EpubDoc::new(&path).map_err(|e| e.to_string())?;
     let mut chapters = Vec::new();
 
-    let toc = doc.toc.clone();
-    for entry in toc {
-        let content = doc.get_resource_str_by_id(&entry.content.to_str().unwrap().split('#').next().unwrap())
-            .map_err(|e| e.to_string())?;
+    // Iterate over the toc by reference
+    for entry in &doc.toc {
+        let title = entry.title.clone();
+        let content_path = entry.content.to_str().unwrap_or_default().split('#').next().unwrap_or_default();
         
-        chapters.push(ChapterContent {
-            title: entry.title,
-            body: content,
-        });
+        if let Ok(content) = doc.get_resource_str(content_path) {
+            chapters.push(ChapterContent {
+                title,
+                body: content,
+            });
+        }
     }
 
     Ok(chapters)
