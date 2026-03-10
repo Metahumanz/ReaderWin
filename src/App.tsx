@@ -52,6 +52,39 @@ function BookCard({ book, onClick }: { book: any, onClick: () => void }) {
   );
 }
 
+const DEFAULT_SOURCES = [
+  {
+    name: "笔趣阁 (lu)",
+    url: "https://www.biquge.lu",
+    search_url: "https://www.biquge.lu/s?q={key}",
+    search_list_selector: "div.bookbox",
+    search_title_selector: "h4.bookname a",
+    search_author_selector: "div.author",
+    search_link_selector: "h4.bookname a",
+    search_cover_selector: "div.bookimg img",
+    chapter_list_selector: "div.listmain dl dd a",
+    chapter_title_selector: "a",
+    chapter_link_selector: "a",
+    content_title_selector: "h1.wap_title",
+    content_body_selector: "div#content"
+  },
+  {
+    name: "新笔趣阁 (so)",
+    url: "http://www.xbiquge.so",
+    search_url: "http://www.xbiquge.so/modules/article/search.php?searchkey={key}",
+    search_list_selector: "tr:nth-child(n+2)",
+    search_title_selector: "td:nth-child(1) a",
+    search_author_selector: "td:nth-child(3)",
+    search_link_selector: "td:nth-child(1) a",
+    search_cover_selector: "img", // Usually not in list
+    chapter_list_selector: "#list dd a",
+    chapter_title_selector: "a",
+    chapter_link_selector: "a",
+    content_title_selector: "div.bookname h1",
+    content_body_selector: "div#content"
+  }
+];
+
 // --- Main App ---
 function App() {
   const [activeTab, setActiveTab] = useState("bookshelf");
@@ -79,6 +112,19 @@ function App() {
   const [bgImage, setBgImage] = useState("");
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, bookId: number } | null>(null);
 
+  // --- Source Engine State ---
+  const [sources, setSources] = useState<any[]>([]);
+  const [selectedSource, setSelectedSource] = useState<any>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [importUrl, setImportUrl] = useState("");
+  const [isImportOpen, setIsImportOpen] = useState(false);
+
+  const [selectedResult, setSelectedResult] = useState<any>(null);
+  const [resultChapters, setResultChapters] = useState<any[]>([]);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+
   useEffect(() => {
     const initDb = async () => {
       console.log("Initializing database...");
@@ -87,6 +133,7 @@ function App() {
         console.log("Database loaded successfully:", _db);
         setDb(_db);
         await fetchBooks(_db);
+        await fetchSources(_db);
         await loadSettings(_db);
       } catch (err) {
         console.error("Database initialization failed:", err);
@@ -99,6 +146,107 @@ function App() {
     document.addEventListener("contextmenu", handleContextMenu);
     return () => document.removeEventListener("contextmenu", handleContextMenu);
   }, []);
+
+  const fetchSources = async (database: Database) => {
+    let res = await database.select<any[]>("SELECT * FROM sources");
+    if (res.length === 0) {
+      console.log("Seeding default sources...");
+      for (const source of DEFAULT_SOURCES) {
+        await database.execute(
+          "INSERT INTO sources (name, url, search_url, search_list_selector, search_title_selector, search_author_selector, search_link_selector, search_cover_selector, chapter_list_selector, chapter_title_selector, chapter_link_selector, content_title_selector, content_body_selector) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          [
+            source.name, source.url, source.search_url,
+            source.search_list_selector, source.search_title_selector,
+            source.search_author_selector, source.search_link_selector,
+            source.search_cover_selector, source.chapter_list_selector,
+            source.chapter_title_selector, source.chapter_link_selector,
+            source.content_title_selector, source.content_body_selector
+          ]
+        );
+      }
+      res = await database.select<any[]>("SELECT * FROM sources");
+    }
+    setSources(res);
+    if (res.length > 0) setSelectedSource(res[0]);
+  };
+
+  const handleSearch = async () => {
+    if (!searchQuery || !selectedSource || !db) return;
+    setSearching(true);
+    try {
+      const results = await invoke<any[]>("search_books", { query: searchQuery, source: selectedSource });
+      setSearchResults(results);
+    } catch (err) {
+      console.error("Search failed:", err);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleImportSource = async () => {
+    if (!importUrl || !db) return;
+    try {
+      const response = await fetch(importUrl);
+      const sourceData = await response.json();
+      // Simple validation and insert
+      await db.execute(
+        "INSERT INTO sources (name, url, search_url, search_list_selector, search_title_selector, search_author_selector, search_link_selector, search_cover_selector, chapter_list_selector, chapter_title_selector, chapter_link_selector, content_title_selector, content_body_selector) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+          sourceData.name, sourceData.url, sourceData.search_url,
+          sourceData.search_list_selector, sourceData.search_title_selector,
+          sourceData.search_author_selector, sourceData.search_link_selector,
+          sourceData.search_cover_selector, sourceData.chapter_list_selector,
+          sourceData.chapter_title_selector, sourceData.chapter_link_selector,
+          sourceData.content_title_selector, sourceData.content_body_selector
+        ]
+      );
+      await fetchSources(db);
+      setImportUrl("");
+      setIsImportOpen(false);
+    } catch (err) {
+      console.error("Import failed:", err);
+    }
+  };
+
+  const handleSaveToBookshelf = async () => {
+    if (!selectedResult || !db) return;
+    try {
+      // 1. Insert book
+      const res = await db.execute(
+        "INSERT INTO books (title, author, cover_path, path, source_id) VALUES (?, ?, ?, ?, ?)",
+        [selectedResult.title, selectedResult.author, selectedResult.cover, "network", selectedSource.id]
+      );
+      const bookId = res.lastInsertId;
+
+      // 2. Insert chapters
+      for (let i = 0; i < resultChapters.length; i++) {
+        await db.execute(
+          "INSERT INTO chapters (book_id, title, body, order_index, link) VALUES (?, ?, ?, ?, ?)",
+          [bookId, resultChapters[i].title, "", i, resultChapters[i].link]
+        );
+      }
+
+      await fetchBooks(db);
+      setSelectedResult(null);
+      setResultChapters([]);
+      setActiveTab("bookshelf");
+    } catch (err) {
+      console.error("Save to bookshelf failed:", err);
+    }
+  };
+
+  const handleViewDetails = async (book: any) => {
+    setSelectedResult(book);
+    setLoadingDetails(true);
+    try {
+      const chapters = await invoke<any[]>("fetch_chapters", { url: book.link, source: selectedSource });
+      setResultChapters(chapters);
+    } catch (err) {
+      console.error("Fetch chapters failed:", err);
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
 
   const fetchBooks = async (database = db) => {
     if (!database) return;
@@ -208,9 +356,36 @@ function App() {
     if (!database) return;
     setLoading(true);
     try {
-      const rows: any[] = await database.select("SELECT title, body FROM chapters WHERE id = $1", [chapterId]);
+      const rows: any[] = await database.select("SELECT title, body, link FROM chapters WHERE id = $1", [chapterId]);
       if (rows.length > 0) {
-        setContent(rows[0]);
+        let { title, body, link } = rows[0];
+
+        if (link && !body) {
+          // Fetch source rules for this book
+          const bookSources = await database.select<any[]>(
+            "SELECT * FROM sources WHERE id = ?",
+            [currentBook.source_id]
+          );
+          const source = bookSources[0];
+
+          try {
+            const res = await invoke<any>("fetch_chapter", {
+              url: link,
+              rule: {
+                title_selector: source?.content_title_selector || "h1",
+                body_selector: source?.content_body_selector || "div"
+              }
+            });
+            body = res.body;
+            // Cache the body
+            await database.execute("UPDATE chapters SET body = ? WHERE id = ?", [body, chapterId]);
+          } catch (err) {
+            console.error("Fetch content failed:", err);
+            body = "加载失败，请检查网络或书源规则。";
+          }
+        }
+
+        setContent({ title, body });
         const currentIdx = chapters.findIndex(c => c.id === chapterId);
         if (currentIdx !== -1 && currentBook) {
           await database.execute("UPDATE books SET progress_index = $1, last_read = CURRENT_TIMESTAMP WHERE id = $2", [currentIdx, currentBook.id]);
@@ -478,12 +653,45 @@ function App() {
                 {chapters.map((chap, idx) => (
                   <button
                     key={chap.id}
-                    onClick={() => {
+                    onClick={async () => { // Made onClick async
                       setCurrentChapterIndex(idx);
-                      loadChapter(chap.id);
+                      // loadChapter(chap.id); // Original call, now integrated below
                       setTocOpen(false);
                       const el = document.getElementById('viewer-content');
                       if (el) el.scrollLeft = 0;
+
+                      // Start of new logic for loadChapter
+                      if (chapters[idx].link && !chapters[idx].body) {
+                        setLoading(true);
+                        try {
+                          // Fetch source rules for this book
+                          const bookSources = await db.select<any[]>(
+                            "SELECT * FROM sources WHERE id = ?",
+                            [currentBook.source_id]
+                          );
+                          const source = bookSources[0];
+
+                          const res = await invoke<any>("fetch_chapter", {
+                            url: chapters[idx].link,
+                            rule: {
+                              title_selector: source?.content_title_selector || "h1",
+                              body_selector: source?.content_body_selector || "div"
+                            }
+                          });
+                          setContent({ title: res.title, body: res.body });
+                          // Update the chapter in state with the fetched body
+                          setChapters(prev => prev.map((c, i) => i === idx ? { ...c, body: res.body } : c));
+                        } catch (err) {
+                          console.error("Failed to fetch chapter content:", err);
+                          // Optionally, display an error message to the user
+                        } finally {
+                          setLoading(false);
+                        }
+                      } else {
+                        // If chapter body is already available or no link, just set content
+                        setContent({ title: chapters[idx].title, body: chapters[idx].body || '' });
+                      }
+                      // End of new logic for loadChapter
                     }}
                     className={`w-full text-left px-5 py-4 rounded-2xl transition-all mb-2 flex items-center gap-4 ${idx === currentChapterIndex ? 'bg-indigo-500 text-white font-bold shadow-lg shadow-indigo-500/20' : 'hover:bg-white/5 text-slate-400 font-medium'}`}
                   >
@@ -580,12 +788,147 @@ function App() {
           )}
 
           {activeTab === "explore" && (
-            <div className="flex flex-col items-center justify-center py-20 text-center animate-in slide-in-from-bottom-5 duration-700">
-              <div className="w-24 h-24 bg-indigo-500/10 rounded-[2.5rem] flex items-center justify-center text-indigo-500 mb-8 border border-indigo-500/20 shadow-2xl shadow-indigo-500/10">
-                <ExploreIcon />
+            <div className="space-y-8 animate-in slide-in-from-bottom-5 duration-500">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-3xl font-black text-white uppercase tracking-tighter">探索源</h2>
+                  <p className="text-slate-500 font-bold uppercase tracking-[0.2em] text-[10px] mt-1">Search Books Across Sources</p>
+                </div>
+                <button onClick={() => setIsImportOpen(true)} className="px-6 py-3 bg-indigo-500/10 hover:bg-indigo-500 text-indigo-400 hover:text-white rounded-2xl transition-all font-bold text-xs flex items-center gap-2">
+                  <AddIcon /> 导入书源
+                </button>
               </div>
-              <h2 className="text-3xl font-black text-white mb-4">正在探索书源引擎...</h2>
-              <p className="text-slate-500 max-w-md mx-auto leading-relaxed font-medium">这里的逻辑将对接 Legado 的 JS 解析引擎，实现全网小说实时搜索与换源阅读。</p>
+
+              {/* Source Selection & Search Bar */}
+              <div className="bg-slate-800/40 border border-white/5 rounded-3xl p-6 backdrop-blur-md flex flex-col md:flex-row gap-4 items-center">
+                <select
+                  value={selectedSource?.id || ""}
+                  onChange={(e) => setSelectedSource(sources.find(s => s.id === parseInt(e.target.value)))}
+                  className="bg-slate-900/50 border border-white/10 rounded-xl px-4 py-4 text-white hover:border-indigo-500 outline-none appearance-none transition-all w-full md:w-48 font-bold text-sm"
+                >
+                  {sources.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  {sources.length === 0 && <option value="">未导入书源</option>}
+                </select>
+                <div className="flex-1 relative w-full">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={e => setSearchQuery(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleSearch()}
+                    placeholder="输入书名或作者搜索..."
+                    className="w-full bg-slate-900/50 border border-white/10 rounded-2xl pl-6 pr-20 py-5 text-white focus:border-indigo-500 outline-none transition-all placeholder:text-slate-600 font-medium"
+                  />
+                  <button
+                    onClick={handleSearch}
+                    disabled={searching}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 bg-indigo-500 hover:bg-indigo-400 text-white px-6 py-2.5 rounded-xl font-bold uppercase text-[10px] tracking-widest transition-all disabled:opacity-50"
+                  >
+                    {searching ? "搜索中..." : "立刻搜索"}
+                  </button>
+                </div>
+              </div>
+
+              {/* Results Grid */}
+              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8">
+                {searchResults.map((book, idx) => (
+                  <div key={idx} className="flex flex-col gap-4 group cursor-pointer active:scale-95 transition-all">
+                    <div className="aspect-[3/4.2] rounded-3xl bg-slate-700 shadow-2xl overflow-hidden relative border border-white/5 group-hover:border-indigo-500/50 transition-all duration-300">
+                      {book.cover ? (
+                        <img src={book.cover} alt={book.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-500"><ExploreIcon /></div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
+                        <button
+                          onClick={() => handleViewDetails(book)}
+                          className="w-full py-3 bg-indigo-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-indigo-500/40"
+                        >
+                          详情 / 加入
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-white line-clamp-2 text-sm">{book.title}</h3>
+                      <p className="text-[10px] text-slate-500 mt-1 font-bold uppercase">{book.author}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Book Details Modal */}
+              {selectedResult && (
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 animate-in fade-in duration-300">
+                  <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl" onClick={() => setSelectedResult(null)} />
+                  <div className="relative w-full max-w-4xl max-h-[80vh] bg-slate-900 border border-white/10 rounded-[3rem] shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-300">
+                    <div className="p-10 border-b border-white/5 flex gap-10 items-start shrink-0">
+                      <div className="w-40 aspect-[3/4.2] rounded-2xl bg-slate-800 shadow-xl overflow-hidden shrink-0 border border-white/5">
+                        <img src={selectedResult.cover} alt="" className="w-full h-full object-cover" />
+                      </div>
+                      <div className="flex-1 pt-4">
+                        <h2 className="text-4xl font-black text-white tracking-tight">{selectedResult.title}</h2>
+                        <p className="text-indigo-400 font-bold uppercase tracking-widest mt-2">{selectedResult.author}</p>
+                        <div className="mt-8 flex gap-4">
+                          <button
+                            onClick={handleSaveToBookshelf}
+                            className="bg-indigo-500 hover:bg-indigo-400 text-white px-10 py-5 rounded-3xl font-black uppercase tracking-widest transition-all shadow-2xl shadow-indigo-600/30 active:scale-95"
+                          >
+                            加入书架
+                          </button>
+                          <button onClick={() => setSelectedResult(null)} className="px-10 py-5 border border-white/10 text-white rounded-3xl font-bold hover:bg-white/5 transition-all">取消</button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-10 bg-black/20">
+                      <h4 className="text-xs font-black text-slate-500 uppercase tracking-widest mb-6 border-b border-white/5 pb-2">章节明细 ({resultChapters.length})</h4>
+                      {loadingDetails ? (
+                        <div className="py-20 text-center animate-pulse text-indigo-400 font-bold uppercase tracking-[0.3em]">目录加载中...</div>
+                      ) : (
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                          {resultChapters.map((chap, idx) => (
+                            <div key={idx} className="bg-white/5 p-4 rounded-xl text-xs text-slate-400 truncate border border-transparent hover:border-indigo-500/30 transition-all font-medium">
+                              {chap.title}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {searchResults.length === 0 && !searching && (
+                <div className="py-20 text-center text-slate-600">
+                  <p className="font-bold text-lg">开启你的阅读探索之旅</p>
+                  <p className="text-xs uppercase mt-2 tracking-widest">请选择书源并输入关键词进行搜索</p>
+                </div>
+              )}
+
+              {/* Import Modal */}
+              {isImportOpen && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 animate-in fade-in duration-300">
+                  <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-md" onClick={() => setIsImportOpen(false)} />
+                  <div className="relative w-full max-w-md bg-slate-900 border border-white/10 rounded-[2.5rem] p-10 shadow-2xl animate-in zoom-in-95 duration-300">
+                    <h3 className="text-2xl font-black text-white mb-2 uppercase tracking-tight">导入书源</h3>
+                    <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mb-8">Import Source JSON URL</p>
+                    <div className="space-y-6">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">书源 JSON 链接</label>
+                        <input
+                          type="text"
+                          value={importUrl}
+                          onChange={e => setImportUrl(e.target.value)}
+                          placeholder="https://..."
+                          className="w-full bg-slate-950 border border-white/10 rounded-2xl px-5 py-4 text-white focus:border-indigo-500 outline-none transition-all"
+                        />
+                      </div>
+                      <div className="pt-4 flex gap-4">
+                        <button onClick={() => setIsImportOpen(false)} className="flex-1 py-4 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-2xl transition-all text-xs">取消</button>
+                        <button onClick={handleImportSource} className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl shadow-xl shadow-indigo-600/20 active:scale-95 transition-all text-xs uppercase tracking-widest">确认导入</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
