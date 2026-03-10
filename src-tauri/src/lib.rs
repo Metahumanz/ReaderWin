@@ -61,12 +61,24 @@ async fn parse_epub(path: String) -> Result<Vec<ChapterContent>, String> {
     let mut doc = EpubDoc::new(&path).map_err(|e| e.to_string())?;
     let mut chapters = Vec::new();
 
-    // Iterate over the toc by reference
-    for entry in &doc.toc {
-        let title = entry.label.clone();
-        let content_path = entry.content.to_str().unwrap_or_default().split('#').next().unwrap_or_default();
-        
-        if let Ok(content) = doc.get_resource_str(content_path) {
+    // Collect toc entries first to avoid borrow conflict with get_resource_str(&mut self)
+    let toc_entries: Vec<(String, String)> = doc.toc
+        .iter()
+        .map(|entry| {
+            let title = entry.label.clone();
+            let content_path = entry.content
+                .to_str()
+                .unwrap_or_default()
+                .split('#')
+                .next()
+                .unwrap_or_default()
+                .to_string();
+            (title, content_path)
+        })
+        .collect();
+
+    for (title, content_path) in toc_entries {
+        if let Ok(content) = doc.get_resource_str(&content_path) {
             chapters.push(ChapterContent {
                 title,
                 body: content,
