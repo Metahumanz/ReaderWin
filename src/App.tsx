@@ -362,6 +362,7 @@ function App() {
 
         if (link && !body) {
           // Fetch source rules for this book
+          if (!currentBook) throw new Error("No book selected");
           const bookSources = await database.select<any[]>(
             "SELECT * FROM sources WHERE id = ?",
             [currentBook.source_id]
@@ -659,12 +660,14 @@ function App() {
                       setTocOpen(false);
                       const el = document.getElementById('viewer-content');
                       if (el) el.scrollLeft = 0;
+                      if (!db) return;
 
                       // Start of new logic for loadChapter
                       if (chapters[idx].link && !chapters[idx].body) {
                         setLoading(true);
                         try {
                           // Fetch source rules for this book
+                          if (!currentBook) return;
                           const bookSources = await db.select<any[]>(
                             "SELECT * FROM sources WHERE id = ?",
                             [currentBook.source_id]
