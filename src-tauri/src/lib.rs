@@ -63,7 +63,7 @@ async fn parse_epub(path: String) -> Result<Vec<ChapterContent>, String> {
 
     // Iterate over the toc by reference
     for entry in &doc.toc {
-        let title = entry.title.clone();
+        let title = entry.label.clone();
         let content_path = entry.content.to_str().unwrap_or_default().split('#').next().unwrap_or_default();
         
         if let Ok(content) = doc.get_resource_str(content_path) {
