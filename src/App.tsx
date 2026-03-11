@@ -763,7 +763,7 @@ function App() {
               id="viewer-content"
               ref={viewerRef}
               onScroll={handleScroll}
-              className="h-full overflow-x-auto scroll-smooth snap-x snap-mandatory no-scrollbar block"
+              className="h-full overflow-x-auto scroll-smooth no-scrollbar block"
               style={{
                 columnWidth: '100vw',
                 columnGap: '0px',
@@ -774,7 +774,7 @@ function App() {
                 <article 
                   key={chap.id} 
                   id={`chapter-${chap.index}`} 
-                  className="h-full snap-start block" 
+                  className="block" 
                   style={{ breakBefore: 'column', breakInside: 'auto' }}
                 >
                   <div
