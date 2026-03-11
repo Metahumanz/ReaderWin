@@ -157,17 +157,11 @@ async fn search_in_book<R: Runtime>(
     book_id: i64,
     query: String,
 ) -> Result<Vec<SearchResult>, String> {
-    let db = tauri_plugin_sql::Builder::default()
-        .build(); // This is not how we access the plugin's DB. We need to use the app handle or managed state.
-    
-    // Wait, the SQL plugin doesn't easily expose the connection to Rust unless we re-open it or use the same path.
-    // Given the current architecture, I'll re-open the database for the search command.
+    // We re-open the database for the search command to avoid complex state management with the plugin.
     let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     let db_path = app_data_dir.join("reader.db");
     
-    // Using rusqlite directly would be better, but the project uses tauri-plugin-sql.
-    // However, tauri-plugin-sql is designed for frontend access.
-    // I'll use rusqlite to perform the search in the backend for efficiency.
+    // We use sqlx for efficient backend-side search.
     
     let db_url = format!("sqlite:{}", db_path.to_string_lossy());
     let mut conn = SqliteConnection::connect(&db_url).await.map_err(|e| e.to_string())?;
