@@ -16,7 +16,8 @@
   }
 
   /* Force indentation on the first paragraph which might be special in some prose configs */
-  .prose p:first-of-type {
+  .prose p:first-of-type,
+  .prose p:first-child {
     text-indent: 2em !important;
   }
 }

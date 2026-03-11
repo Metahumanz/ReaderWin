@@ -79,7 +79,6 @@ function App() {
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, bookId: number } | null>(null);
   const [importing, setImporting] = useState(false);
   const progress = chapters.length > 0 ? Math.round((currentChapterIndex / Math.max(1, chapters.length - 1)) * 100) : 0;
-  const [tempProgress, setTempProgress] = useState(0);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<string | null>(null);
 
@@ -87,11 +86,6 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-
-  useEffect(() => {
-    setTempProgress(progress);
-  }, [progress]);
 
   useEffect(() => {
     const initDb = async () => {
@@ -129,15 +123,13 @@ function App() {
     };
   }, []);
 
-  // Sync ToC Scroll
+  // Sync ToC Scroll — instantly position to current chapter
   useEffect(() => {
     if (tocOpen) {
-      setTimeout(() => {
-        const activeItem = document.getElementById(`toc-item-${currentChapterIndex}`);
-        if (activeItem) {
-          activeItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-      }, 300);
+      const activeItem = document.getElementById(`toc-item-${currentChapterIndex}`);
+      if (activeItem) {
+        activeItem.scrollIntoView({ behavior: 'instant', block: 'center' });
+      }
     }
   }, [tocOpen, currentChapterIndex]);
 
@@ -178,6 +170,7 @@ function App() {
     if (!database) return;
     try {
       const rows: any[] = await database.select("SELECT * FROM settings");
+      let savedWidth = 0, savedHeight = 0;
       rows.forEach(row => {
         if (row.key === 'webdav_url') setWebdavUrl(row.value);
         if (row.key === 'webdav_user') setWebdavUser(row.value);
@@ -188,12 +181,22 @@ function App() {
         if (row.key === 'letter_spacing') setLetterSpacing(parseFloat(row.value));
         if (row.key === 'content_width') setContentWidth(parseInt(row.value));
         if (row.key === 'bg_image') setBgImage(row.value);
+        if (row.key === 'window_width') savedWidth = parseInt(row.value);
+        if (row.key === 'window_height') savedHeight = parseInt(row.value);
         if (row.key === 'immersive_mode') {
           const isImmersive = row.value === 'true';
           setImmersiveMode(isImmersive);
           toggleImmersive(isImmersive);
         }
       });
+      // Restore window size if saved
+      if (savedWidth > 0 && savedHeight > 0) {
+        try {
+          const win = getCurrentWindow();
+          await win.setSize(new LogicalSize(savedWidth, savedHeight));
+          await win.center();
+        } catch (e) { console.error('Failed to restore window size:', e); }
+      }
     } catch (err) { console.error(err); }
   };
 
@@ -400,6 +403,9 @@ function App() {
 
     await win.setSize(size);
     await win.center();
+    // Save the window size so it restores on next launch
+    await saveSetting('window_width', size.width.toString());
+    await saveSetting('window_height', size.height.toString());
   };
 
   if (readerOpen) {
@@ -457,7 +463,7 @@ function App() {
             } else {
               const start = el.scrollLeft;
               el.scrollBy({ left: -el.clientWidth, behavior: 'smooth' });
-              setTimeout(() => { if (Math.abs(el.scrollLeft - start) < 10 && start === 0) prevChapter(); }, 350);
+              setTimeout(() => { if (Math.abs(el.scrollLeft - start) < 10 && start === 0) prevChapter(true); }, 350);
             }
           }}
         >
@@ -467,7 +473,7 @@ function App() {
             if (el) {
               const start = el.scrollLeft;
               el.scrollBy({ left: -el.clientWidth, behavior: 'smooth' });
-              setTimeout(() => { if (Math.abs(el.scrollLeft - start) < 10 && start === 0) prevChapter(); }, 350);
+              setTimeout(() => { if (Math.abs(el.scrollLeft - start) < 10 && start === 0) prevChapter(true); }, 350);
             }
           }} />
           <div className="absolute inset-x-1/4 inset-y-0 w-1/2 z-10 cursor-alias" onClick={() => setReaderMenuOpen(!readerMenuOpen)} />
@@ -521,44 +527,80 @@ function App() {
         </div>
 
         {/* Reader Hub Menu Overlay */}
-        {readerMenuOpen && !searchOpen && !settingsOpen && !tocOpen && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center animate-in fade-in duration-300">
+        {readerMenuOpen && !searchOpen && !tocOpen && (
+          <div className="fixed inset-0 z-[100] flex items-end justify-center pb-10 animate-in fade-in duration-300">
             <div className="absolute inset-0 bg-black/40 backdrop-blur-md" onClick={() => setReaderMenuOpen(false)} />
-            <div className="relative grid grid-cols-3 gap-8 p-12 bg-slate-900/90 border border-white/10 rounded-[3rem] shadow-2xl animate-in zoom-in-95 duration-500" onClick={(e) => e.stopPropagation()}>
-              <button
-                onClick={() => { setTocOpen(true); setReaderMenuOpen(false); }}
-                className="flex flex-col items-center gap-4 p-8 rounded-3xl bg-white/5 hover:bg-indigo-500/20 text-slate-300 hover:text-indigo-400 transition-all group"
-              >
-                <div className="p-4 rounded-2xl bg-white/5 group-hover:bg-indigo-500/20 transition-all">
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
-                </div>
-                <span className="text-xs font-black uppercase tracking-widest">目录列表</span>
-              </button>
+            <div className="relative w-full max-w-xl px-6 animate-in slide-in-from-bottom-8 duration-500" onClick={(e) => e.stopPropagation()}>
+              <div className="bg-slate-900/95 border border-white/10 rounded-[2rem] shadow-2xl p-6 space-y-5">
 
-              <button
-                onClick={() => { setSearchOpen(true); }}
-                className="flex flex-col items-center gap-4 p-8 rounded-3xl bg-white/5 hover:bg-indigo-500/20 text-slate-300 hover:text-indigo-400 transition-all group"
-              >
-                <div className="p-4 rounded-2xl bg-white/5 group-hover:bg-indigo-500/20 transition-all">
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                {/* Top nav row */}
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => { prevChapter(true); setReaderMenuOpen(false); }}
+                    disabled={currentChapterIndex <= 0}
+                    className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 disabled:opacity-30 rounded-2xl transition-all active:scale-95 text-xs font-black uppercase tracking-widest"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M15 18l-6-6 6-6" /></svg>
+                    上一章
+                  </button>
+                  <button
+                    onClick={() => { setTocOpen(true); setReaderMenuOpen(false); }}
+                    className="flex-1 flex items-center justify-center gap-2 py-3 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-2xl transition-all active:scale-95 text-xs font-black uppercase tracking-widest"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+                    目录
+                  </button>
+                  <button
+                    onClick={() => { nextChapter(); setReaderMenuOpen(false); }}
+                    disabled={currentChapterIndex >= chapters.length - 1}
+                    className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 disabled:opacity-30 rounded-2xl transition-all active:scale-95 text-xs font-black uppercase tracking-widest"
+                  >
+                    下一章
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M9 18l6-6-6-6" /></svg>
+                  </button>
                 </div>
-                <span className="text-xs font-black uppercase tracking-widest">全文搜索</span>
-              </button>
 
-              <button
-                onClick={() => { setSettingsOpen(true); }}
-                className="flex flex-col items-center gap-4 p-8 rounded-3xl bg-white/5 hover:bg-indigo-500/20 text-slate-300 hover:text-indigo-400 transition-all group"
-              >
-                <div className="p-4 rounded-2xl bg-white/5 group-hover:bg-indigo-500/20 transition-all">
-                  <SettingsIcon />
+                {/* Font Size slider */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-[10px] font-black text-slate-500 uppercase tracking-[0.15em]">
+                    <span>字体大小</span><span className="text-indigo-400">{fontSize}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => { const v = Math.max(12, fontSize - 1); setFontSize(v); saveSetting('font_size', v.toString()); }} className="w-8 h-8 bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0">-</button>
+                    <input type="range" min="12" max="64" value={fontSize} onChange={(e) => { const v = parseInt(e.target.value); setFontSize(v); saveSetting('font_size', v.toString()); }} className="flex-1 accent-indigo-500 h-1.5" />
+                    <button onClick={() => { const v = Math.min(64, fontSize + 1); setFontSize(v); saveSetting('font_size', v.toString()); }} className="w-8 h-8 bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0">+</button>
+                  </div>
                 </div>
-                <span className="text-xs font-black uppercase tracking-widest">阅读设置</span>
-              </button>
+
+                {/* Line Height slider */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-[10px] font-black text-slate-500 uppercase tracking-[0.15em]">
+                    <span>行高</span><span className="text-indigo-400">{lineHeight}</span>
+                  </div>
+                  <input type="range" min="1" max="4" step="0.1" value={lineHeight} onChange={(e) => { const v = parseFloat(e.target.value); setLineHeight(v); saveSetting('line_height', v.toString()); }} className="w-full accent-indigo-500 h-1.5" />
+                </div>
+
+                {/* Bottom action row */}
+                <div className="flex items-center gap-3 pt-1">
+                  <button onClick={() => { setSearchOpen(true); }} className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 rounded-2xl transition-all text-xs font-black uppercase tracking-widest">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    搜索
+                  </button>
+                  <button onClick={() => { const nf = fontFamily.includes("serif") ? "system-ui, sans-serif" : "'Georgia', serif"; setFontFamily(nf); saveSetting('font_family', nf); }} className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 rounded-2xl transition-all text-xs font-black uppercase tracking-widest">
+                    切换字体
+                  </button>
+                  <button onClick={async () => { const sel = await open({ multiple: false, filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }] }); if (sel && typeof sel === 'string') { const src = convertFileSrc(sel); setBgImage(src); saveSetting('bg_image', src); } }} className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 rounded-2xl transition-all text-xs font-black uppercase tracking-widest">
+                    背景图
+                  </button>
+                  <button onClick={() => setReaderMenuOpen(false)} className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-xs font-black uppercase tracking-widest transition-all shadow-xl shadow-indigo-600/20">
+                    关闭
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
 
-        {/* Full-text Search Overlay */}
         {searchOpen && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center animate-in fade-in duration-300">
             <div className="absolute inset-0 bg-black/60 backdrop-blur-xl" onClick={() => setSearchOpen(false)} />
@@ -601,143 +643,9 @@ function App() {
           </div>
         )}
 
-        {/* Reader Settings Overlay */}
-        {settingsOpen && (
-          <div className="fixed inset-0 z-[110] flex items-center justify-center animate-in fade-in duration-300">
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-xl" onClick={() => setSettingsOpen(false)} />
-            <div className="relative max-w-2xl w-full mx-auto bg-slate-900/95 backdrop-blur-3xl border border-white/10 rounded-[2.5rem] p-10 shadow-2xl animate-in slide-in-from-bottom-10 duration-500" onClick={(e) => e.stopPropagation()}>
-              <div className="grid grid-cols-2 gap-10">
-                <div className="space-y-8">
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex justify-between">
-                      <span>字体大小</span>
-                      <span className="text-indigo-400 font-bold">{fontSize}</span>
-                    </label>
-                    <div className="flex items-center gap-4">
-                      <button onClick={() => { setFontSize(s => Math.max(12, s - 1)); saveSetting('font_size', (fontSize - 1).toString()); }} className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center font-bold">-</button>
-                      <input type="range" min="12" max="64" value={fontSize} onChange={(e) => {
-                        const val = parseInt(e.target.value);
-                        setFontSize(val);
-                        saveSetting('font_size', val.toString());
-                      }} className="flex-1 accent-indigo-500 h-1.5" />
-                      <button onClick={() => { setFontSize(s => Math.min(64, s + 1)); saveSetting('font_size', (fontSize + 1).toString()); }} className="w-10 h-10 bg-white/5 hover:bg-white/10 rounded-xl flex items-center justify-center font-bold">+</button>
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex justify-between">
-                      <span>字符间距</span>
-                      <span className="text-indigo-400 font-bold">{letterSpacing}</span>
-                    </label>
-                    <input type="range" min="-2" max="10" step="0.5" value={letterSpacing} onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      setLetterSpacing(val);
-                      saveSetting('letter_spacing', val.toString());
-                    }} className="w-full accent-indigo-500 h-1.5" />
-                  </div>
-                </div>
-                <div className="space-y-8">
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex justify-between">
-                      <span>行高</span>
-                      <span className="text-indigo-400 font-bold">{lineHeight}</span>
-                    </label>
-                    <input type="range" min="1" max="4" step="0.1" value={lineHeight} onChange={(e) => {
-                      const val = parseFloat(e.target.value);
-                      setLineHeight(val);
-                      saveSetting('line_height', val.toString());
-                    }} className="w-full accent-indigo-500 h-1.5" />
-                  </div>
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex justify-between">
-                      <span>内容页边距</span>
-                      <span className="text-indigo-400 font-bold">{contentWidth}px</span>
-                    </label>
-                    <input type="range" min="400" max="1400" step="50" value={contentWidth} onChange={(e) => {
-                      const val = parseInt(e.target.value);
-                      setContentWidth(val);
-                      saveSetting('content_width', val.toString());
-                    }} className="w-full accent-indigo-500 h-1.5" />
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-8 pt-8 border-t border-white/5 space-y-4">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] flex justify-between px-2">
-                  <span>阅读进度</span>
-                  <span className="text-indigo-400 font-bold">{tempProgress}%</span>
-                </label>
-                <div className="flex items-center gap-6">
-                  <button
-                    onClick={() => prevChapter()}
-                    disabled={currentChapterIndex <= 0}
-                    className="w-12 h-12 bg-white/5 hover:bg-white/10 disabled:opacity-30 rounded-2xl flex items-center justify-center transition-all active:scale-90"
-                  >
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M15 18l-6-6 6-6" /></svg>
-                  </button>
-
-                  <div className="flex-1 relative group">
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={tempProgress}
-                      onChange={(e) => setTempProgress(parseInt(e.target.value))}
-                      onMouseUp={async (e: any) => {
-                        const newPercent = parseInt(e.target.value);
-                        if (newPercent === progress) return;
-
-                        if (confirm(`确定要跳转到全书的 ${newPercent}% 附近吗？`)) {
-                          const targetIdx = Math.min(
-                            chapters.length - 1,
-                            Math.floor((newPercent / 100) * chapters.length)
-                          );
-                          setCurrentChapterIndex(targetIdx);
-                          await loadChapter(chapters[targetIdx].id);
-                        } else {
-                          setTempProgress(progress);
-                        }
-                      }}
-                      className="w-full accent-indigo-500 h-2 bg-white/10 rounded-full cursor-pointer"
-                    />
-                  </div>
-
-                  <button
-                    onClick={nextChapter}
-                    disabled={currentChapterIndex >= chapters.length - 1}
-                    className="w-12 h-12 bg-white/5 hover:bg-white/10 disabled:opacity-30 rounded-2xl flex items-center justify-center transition-all active:scale-90"
-                  >
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M9 18l6-6-6-6" /></svg>
-                  </button>
-                </div>
-              </div>
-
-              <div className="mt-10 flex gap-4">
-                <button onClick={() => {
-                  const nextFont = fontFamily.includes("serif") ? "system-ui, sans-serif" : "'Georgia', serif";
-                  setFontFamily(nextFont);
-                  saveSetting('font_family', nextFont);
-                }} className="flex-1 py-4 bg-white/5 hover:bg-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all">
-                  切换字体库
-                </button>
-                <button onClick={async () => {
-                  const selected = await open({ multiple: false, filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }] });
-                  if (selected && typeof selected === 'string') {
-                    const imageSrc = convertFileSrc(selected);
-                    setBgImage(imageSrc);
-                    saveSetting('bg_image', imageSrc);
-                  }
-                }} className="flex-1 py-4 bg-white/5 hover:bg-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all">
-                  自定义背景
-                </button>
-                <button onClick={() => { setSettingsOpen(false); setReaderMenuOpen(false); }} className="px-10 py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all shadow-xl shadow-indigo-600/20">
-                  完成设定
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* ToC Overlay */}
+
         {tocOpen && (
           <div className="fixed inset-0 z-[110] flex animate-in fade-in duration-300">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setTocOpen(false)} />

@@ -17,6 +17,8 @@
     "core:window:allow-set-size",
     "core:window:allow-set-fullscreen",
     "core:window:allow-set-decorations",
-    "core:window:allow-center"
+    "core:window:allow-center",
+    "updater:allow-check",
+    "updater:allow-download-and-install"
   ]
 }
