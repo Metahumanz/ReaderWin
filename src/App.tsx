@@ -20,6 +20,56 @@ const AddIcon = () => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
 );
 
+// --- Virtual TOC list (handles 10000+ chapters without lag) ---
+const ITEM_H = 60; // px per chapter row
+function VirtualTocList({ chapters, currentChapterIndex, onSelect }: { chapters: any[], currentChapterIndex: number, onSelect: (idx: number) => void }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const visibleCount = Math.ceil(window.innerHeight / ITEM_H) + 4;
+  const startIdx = Math.max(0, Math.floor(scrollTop / ITEM_H) - 2);
+  const endIdx = Math.min(chapters.length - 1, startIdx + visibleCount);
+
+  useEffect(() => {
+    // Scroll active chapter into view when opened
+    if (containerRef.current) {
+      const target = Math.max(0, currentChapterIndex * ITEM_H - containerRef.current.clientHeight / 2 + ITEM_H / 2);
+      containerRef.current.scrollTop = target;
+      setScrollTop(target);
+    }
+  }, [currentChapterIndex]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="flex-1 overflow-y-auto no-scrollbar"
+      onScroll={(e) => setScrollTop((e.target as HTMLDivElement).scrollTop)}
+    >
+      {/* Spacer to push virtual items to correct position */}
+      <div style={{ height: chapters.length * ITEM_H, position: 'relative' }}>
+        {chapters.slice(startIdx, endIdx + 1).map((chap, i) => {
+          const idx = startIdx + i;
+          return (
+            <button
+              key={chap.id}
+              id={`toc-item-${idx}`}
+              onClick={() => onSelect(idx)}
+              style={{ position: 'absolute', top: idx * ITEM_H, left: 0, right: 0, height: ITEM_H }}
+              className={`w-full text-left px-5 flex items-center gap-4 transition-all ${
+                idx === currentChapterIndex
+                  ? 'bg-indigo-500 text-white font-bold shadow-lg shadow-indigo-500/20'
+                  : 'hover:bg-white/5 text-slate-400 font-medium'
+              }`}
+            >
+              <span className="text-[10px] opacity-40 font-black w-10 shrink-0 text-right">{idx + 1}</span>
+              <span className="truncate text-sm">{chap.title}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function NavButton({ active, onClick, icon, label }: any) {
   return (
     <button onClick={onClick} className={`relative group flex flex-col items-center gap-1 transition-all ${active ? 'text-indigo-400' : 'text-slate-400 hover:text-slate-200'}`}>
@@ -61,6 +111,7 @@ function App() {
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
   const [windowChapters, setWindowChapters] = useState<{ id: number; index: number; title: string; body: string; link: string }[]>([]);
   const viewerRef = useRef<HTMLDivElement>(null);
+  const readerRef = useRef<HTMLDivElement>(null);
   const scrollAnchorRef = useRef<{ anchorChapterIndex: number, offsetFromAnchor: number, action: string } | null>(null);
   const isLoadingEdges = useRef(false);
   const [loading, setLoading] = useState(false);
@@ -90,13 +141,33 @@ function App() {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
 
+  // Selection context menu
+  const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, text: string } | null>(null);
+
+  // Replacement rules
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const [replacementRules, setReplacementRules] = useState<any[]>([]);
+  const [newRulePattern, setNewRulePattern] = useState("");
+  const [newRuleReplacement, setNewRuleReplacement] = useState("");
+  const [newRuleIsRegex, setNewRuleIsRegex] = useState(false);
+
   useEffect(() => {
     const initDb = async () => {
       console.log("Initializing database...");
       try {
         const _db = await Database.load("sqlite:reader.db");
-        console.log("Database loaded successfully:", _db);
         setDb(_db);
+        // Create replacement rules table if not exists
+        await _db.execute(`CREATE TABLE IF NOT EXISTS replacement_rules (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          pattern TEXT NOT NULL,
+          replacement TEXT NOT NULL,
+          scope TEXT NOT NULL DEFAULT 'global',
+          is_regex INTEGER NOT NULL DEFAULT 0,
+          active INTEGER NOT NULL DEFAULT 1
+        )`);
+        const rules: any[] = await _db.select("SELECT * FROM replacement_rules WHERE active = 1");
+        setReplacementRules(rules);
         await fetchBooks(_db);
         await loadSettings(_db);
       } catch (err) {
@@ -349,6 +420,19 @@ function App() {
     if (rows.length > 0) {
       let { title, body, link } = rows[0];
       if (link && !body) body = "此章节内容为网络链接，当前版本已关闭网络解析功能。";
+      // Apply active replacement rules
+      if (replacementRules.length > 0 && body) {
+        for (const rule of replacementRules) {
+          if (!rule.active) continue;
+          try {
+            if (rule.is_regex) {
+              body = body.replace(new RegExp(rule.pattern, 'g'), rule.replacement);
+            } else {
+              body = body.split(rule.pattern).join(rule.replacement);
+            }
+          } catch (e) { /* ignore invalid regex */ }
+        }
+      }
       return { id: chapterId, title, body, link };
     }
     return null;
@@ -524,11 +608,12 @@ function App() {
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim() || !currentBook) return;
+  const handleSearch = async (overrideQuery?: string) => {
+    const q = overrideQuery || searchQuery;
+    if (!q.trim() || !currentBook) return;
     setSearching(true);
     try {
-      const results: any[] = await invoke("search_in_book", { bookId: currentBook.id, query: searchQuery });
+      const results: any[] = await invoke("search_in_book", { bookId: currentBook.id, query: q });
       setSearchResults(results);
     } catch (err) {
       alert("搜索失败: " + err);
@@ -569,6 +654,7 @@ function App() {
 
     return (
       <div
+        ref={readerRef}
         className="h-screen text-[#d4d4d4] overflow-hidden flex flex-col relative transition-all duration-700 select-none"
         style={{
           fontFamily,
@@ -609,6 +695,20 @@ function App() {
         {/* Paginated Content Area */}
         <div
           className="flex-1 relative overflow-hidden"
+          onMouseUp={(e) => {
+            const sel = window.getSelection();
+            if (sel && sel.toString().trim() && readerRef.current && readerRef.current.contains(e.target as Node)) {
+              const range = sel.getRangeAt(0);
+              const rect = range.getBoundingClientRect();
+              setSelectionMenu({
+                x: rect.left + rect.width / 2,
+                y: rect.top - 10,
+                text: sel.toString().trim()
+              });
+            } else {
+              setSelectionMenu(null);
+            }
+          }}
           onWheel={(e) => {
             const viewer = viewerRef.current;
             if (!viewer || loading) return;
@@ -619,6 +719,27 @@ function App() {
             }
           }}
         >
+          {/* Selection Context Menu */}
+          {selectionMenu && (
+            <div 
+              className="fixed z-[120] -translate-x-1/2 -translate-y-full bg-slate-800 border border-white/10 rounded-xl shadow-2xl p-1 flex gap-1 animate-in zoom-in-95 duration-200"
+              style={{ left: selectionMenu.x, top: selectionMenu.y }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button 
+                onClick={() => {
+                  setSearchQuery(selectionMenu.text);
+                  setSearchOpen(true);
+                  handleSearch(selectionMenu.text);
+                  setSelectionMenu(null);
+                }}
+                className="px-3 py-1.5 hover:bg-indigo-500 rounded-lg text-xs font-bold transition-all flex items-center gap-2"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                书内搜索
+              </button>
+            </div>
+          )}
           {/* Click areas for turning pages & menu */}
           <div className="absolute inset-y-0 left-0 w-1/4 z-20 cursor-w-resize" onClick={() => {
             const viewer = viewerRef.current;
@@ -649,7 +770,7 @@ function App() {
               {windowChapters.map((chap) => (
                 <article key={chap.id} id={`chapter-${chap.index}`} className="h-full snap-start" style={{ breakBefore: 'column', breakInside: 'auto' }}>
                   <div
-                    className="max-w-none mx-auto h-full px-12 py-12 flex flex-col"
+                    className="max-w-none mx-auto h-full px-12 py-12"
                     style={{ width: `${contentWidth}px`, maxWidth: '90vw' }}
                   >
                     <h1
@@ -659,7 +780,7 @@ function App() {
                       {chap.title}
                     </h1>
                     <div
-                      className="prose prose-invert max-w-none text-justify text-slate-200 flex-1"
+                      className="prose prose-invert max-w-none text-justify text-slate-200"
                       style={{
                         fontSize: `calc(${fontSize}px + 0.2vw)`,
                         lineHeight: lineHeight,
@@ -764,7 +885,7 @@ function App() {
                     onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                     className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white placeholder:text-slate-600 focus:border-indigo-500 outline-none transition-all"
                   />
-                  <button onClick={handleSearch} className="absolute right-4 top-1/2 -translate-y-1/2 text-indigo-500 hover:text-indigo-400">
+                  <button onClick={() => handleSearch()} className="absolute right-4 top-1/2 -translate-y-1/2 text-indigo-500 hover:text-indigo-400">
                     {searching ? <div className="animate-spin rounded-full h-5 w-5 border-2 border-indigo-500/20 border-t-indigo-500" /> : <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>}
                   </button>
                 </div>
@@ -797,29 +918,20 @@ function App() {
         {tocOpen && (
           <div className="fixed inset-0 z-[110] flex animate-in fade-in duration-300">
             <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setTocOpen(false)} />
-            <div className="relative w-80 bg-slate-900 h-full shadow-2xl overflow-y-auto border-r border-white/10 animate-in slide-in-from-left duration-500">
-              <div className="p-8 border-b border-white/5 sticky top-0 bg-slate-900 z-10">
+            <div className="relative w-80 bg-slate-900 h-full shadow-2xl flex flex-col border-r border-white/10 animate-in slide-in-from-left duration-500">
+              <div className="p-8 border-b border-white/5 shrink-0">
                 <h2 className="text-xl font-black text-white mb-1 uppercase tracking-tighter">目录</h2>
                 <p className="text-[10px] text-indigo-500 font-black uppercase tracking-[0.2em]">{chapters.length} Chapters</p>
               </div>
-              <div className="p-4">
-                {chapters.map((chap, idx) => (
-                  <button
-                    key={chap.id}
-                    id={`toc-item-${idx}`}
-                    onClick={async () => {
-                      setCurrentChapterIndex(idx);
-                      await loadChapter(idx);
-                      setTocOpen(false);
-                      setReaderMenuOpen(false);
-                    }}
-                    className={`w-full text-left px-5 py-4 rounded-2xl transition-all mb-2 flex items-center gap-4 ${idx === currentChapterIndex ? 'bg-indigo-500 text-white font-bold shadow-lg shadow-indigo-500/20' : 'hover:bg-white/5 text-slate-400 font-medium'}`}
-                  >
-                    <span className="text-[10px] opacity-40 font-black">{idx + 1}</span>
-                    <span className="truncate text-sm">{chap.title}</span>
-                  </button>
-                ))}
-              </div>
+              <VirtualTocList
+                chapters={chapters}
+                currentChapterIndex={currentChapterIndex}
+                onSelect={async (idx) => {
+                  await loadChapter(idx);
+                  setTocOpen(false);
+                  setReaderMenuOpen(false);
+                }}
+              />
             </div>
           </div>
         )}
@@ -908,6 +1020,7 @@ function App() {
 
 
           {activeTab === "settings" && (
+            <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in zoom-in-95 duration-300">
               <div className="bg-slate-800/40 border border-white/5 rounded-[2rem] p-10 backdrop-blur-sm">
                 <h2 className="text-2xl font-bold text-white mb-8 flex items-center gap-3">
@@ -932,6 +1045,45 @@ function App() {
                     <button onClick={() => handleWebdavSync('upload')} className="flex-1 py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl shadow-xl shadow-indigo-600/20 active:scale-95 transition-all">备份至云端</button>
                     <button onClick={() => handleWebdavSync('download')} className="px-8 py-4 bg-slate-700 hover:bg-slate-600 text-white font-bold rounded-2xl active:scale-95 transition-all">恢复备份</button>
                   </div>
+                </div>
+              </div>
+
+              <div className="bg-slate-800/40 border border-white/5 rounded-[2rem] p-10 backdrop-blur-sm">
+                <div className="flex justify-between items-center mb-8">
+                  <h2 className="text-2xl font-bold text-white flex items-center gap-3">
+                    <div className="p-2 bg-pink-500/20 rounded-xl">
+                      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                    </div>文本替换规则
+                  </h2>
+                  <button onClick={() => setRulesOpen(true)} className="p-2 hover:bg-white/10 rounded-xl transition-all">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                  </button>
+                </div>
+                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 no-scrollbar">
+                  {replacementRules.length === 0 && <div className="text-center py-10 text-slate-600 text-xs font-bold uppercase tracking-widest">暂无替换规则</div>}
+                  {replacementRules.map(rule => (
+                    <div key={rule.id} className="flex items-center justify-between p-4 bg-slate-900/50 border border-white/5 rounded-2xl group">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-xs font-black text-indigo-400 truncate">{rule.pattern}</span>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" className="text-slate-600"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                          <span className="text-xs font-black text-emerald-400 truncate">{rule.replacement || '空'}</span>
+                        </div>
+                        <div className="flex gap-2">
+                           {rule.is_regex === 1 && <span className="text-[8px] px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded-md font-black uppercase">Regex</span>}
+                           <span className="text-[8px] px-1.5 py-0.5 bg-blue-500/20 text-blue-400 rounded-md font-black uppercase">{rule.scope}</span>
+                        </div>
+                      </div>
+                      <button onClick={async () => {
+                        if (db) {
+                          await db.execute("DELETE FROM replacement_rules WHERE id = $1", [rule.id]);
+                          setReplacementRules(replacementRules.filter(r => r.id !== rule.id));
+                        }
+                      }} className="p-2 text-red-500/50 hover:text-red-500 transition-all opacity-0 group-hover:opacity-100">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                      </button>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -984,7 +1136,8 @@ function App() {
                   <p className="text-[10px] text-slate-600 font-bold uppercase tracking-widest text-center">系统将尝试通过代理和绕过代理两种方式检查</p>
                 </div>
               </div>
-            </div>
+              </div>
+            </>
           )}
         </section>
 
@@ -997,6 +1150,46 @@ function App() {
                 <h3 className="text-2xl font-black text-white uppercase tracking-tighter">正在导入并拆分章节</h3>
                 <p className="text-slate-500 font-bold uppercase tracking-[0.3em] text-[10px] mt-2 animate-pulse">Parsing local file... Please wait</p>
               </div>
+            </div>
+          </div>
+        )}
+        {/* Rules Add Modal */}
+        {rulesOpen && (
+          <div className="fixed inset-0 z-[150] flex items-center justify-center animate-in fade-in duration-300">
+            <div className="absolute inset-0 bg-black/80 backdrop-blur-xl" onClick={() => setRulesOpen(false)} />
+            <div className="relative w-[400px] bg-slate-900 border border-white/10 rounded-[2.5rem] shadow-2xl p-8 space-y-6 animate-in zoom-in-95 duration-300" onClick={e => e.stopPropagation()}>
+               <div className="space-y-1">
+                 <h3 className="text-xl font-black text-white uppercase tracking-tighter">添加替换规则</h3>
+                 <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest">净化阅读体验</p>
+               </div>
+               <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest pl-1">查找内容 (Pattern)</label>
+                    <input type="text" value={newRulePattern} onChange={e => setNewRulePattern(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500 transition-all" placeholder="例如: 广告文字" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest pl-1">替换为 (Replacement)</label>
+                    <input type="text" value={newRuleReplacement} onChange={e => setNewRuleReplacement(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500 transition-all" placeholder="留空则直接删除" />
+                  </div>
+                  <div className="flex items-center justify-between">
+                     <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">使用正则表达式</span>
+                     <button onClick={() => setNewRuleIsRegex(!newRuleIsRegex)} className={`w-12 h-6 rounded-full p-1 transition-all ${newRuleIsRegex ? 'bg-indigo-500' : 'bg-slate-800'}`}>
+                        <div className={`w-4 h-4 bg-white rounded-full transition-all ${newRuleIsRegex ? 'translate-x-6' : 'translate-x-0'}`} />
+                     </button>
+                  </div>
+               </div>
+               <div className="flex gap-4 pt-2">
+                  <button onClick={() => setRulesOpen(false)} className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-white font-bold rounded-2xl transition-all">取消</button>
+                  <button onClick={async () => {
+                    if (!newRulePattern || !db) return;
+                    await db.execute("INSERT INTO replacement_rules (pattern, replacement, is_regex, scope) VALUES ($1, $2, $3, $4)", [newRulePattern, newRuleReplacement, newRuleIsRegex ? 1 : 0, 'global']);
+                    const rules: any[] = await db.select("SELECT * FROM replacement_rules WHERE active = 1");
+                    setReplacementRules(rules);
+                    setNewRulePattern("");
+                    setNewRuleReplacement("");
+                    setRulesOpen(false);
+                  }} className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl shadow-xl shadow-indigo-600/20 transition-all">添加</button>
+               </div>
             </div>
           </div>
         )}
