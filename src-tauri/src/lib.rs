@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use sqlx::{Connection, Row, sqlite::SqliteConnection};
 use tauri_plugin_sql::{Migration, MigrationKind};
 use std::fs;
 use regex::Regex;
@@ -168,13 +169,23 @@ async fn search_in_book<R: Runtime>(
     // However, tauri-plugin-sql is designed for frontend access.
     // I'll use rusqlite to perform the search in the backend for efficiency.
     
-    let conn = rusqlite::Connection::open(db_path).map_err(|e| e.to_string())?;
-    let mut stmt = conn.prepare("SELECT order_index, title, body FROM chapters WHERE book_id = ?1 AND body LIKE ?2 ORDER BY order_index ASC")
-        .map_err(|e| e.to_string())?;
+    let db_url = format!("sqlite:{}", db_path.to_string_lossy());
+    let mut conn = SqliteConnection::connect(&db_url).await.map_err(|e| e.to_string())?;
     
     let search_pattern = format!("%{}%", query);
-    let rows = stmt.query_map([book_id.to_string(), search_pattern], |row| {
-        let body: String = row.get(2)?;
+    let rows = sqlx::query("SELECT order_index, title, body FROM chapters WHERE book_id = ? AND body LIKE ? ORDER BY order_index ASC")
+        .bind(book_id)
+        .bind(search_pattern)
+        .fetch_all(&mut conn)
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    let mut results = Vec::new();
+    for row in rows {
+        let order_index: i64 = row.get(0);
+        let chapter_title: String = row.get(1);
+        let body: String = row.get(2);
+
         // Find the first occurrence and create a snippet
         let lower_body = body.to_lowercase();
         let lower_query = query.to_lowercase();
@@ -186,16 +197,11 @@ async fn search_in_book<R: Runtime>(
             body.chars().take(80).collect::<String>() + "..."
         };
         
-        Ok(SearchResult {
-            chapter_index: row.get(0)?,
-            chapter_title: row.get(1)?,
+        results.push(SearchResult {
+            chapter_index: order_index as usize,
+            chapter_title,
             snippet,
-        })
-    }).map_err(|e| e.to_string())?;
-    
-    let mut results = Vec::new();
-    for row in rows {
-        results.push(row.map_err(|e| e.to_string())?);
+        });
     }
     
     Ok(results)

@@ -3,6 +3,7 @@ import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import Database from "@tauri-apps/plugin-sql";
 import { open } from "@tauri-apps/plugin-dialog";
 import { check } from "@tauri-apps/plugin-updater";
+import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 
 // --- Components & Icons ---
 const BookshelfIcon = () => (
@@ -378,7 +379,6 @@ function App() {
   };
 
   const toggleImmersive = async (immersive: boolean) => {
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
     const win = getCurrentWindow();
     await win.setDecorations(!immersive);
     await win.setFullscreen(immersive);
@@ -387,7 +387,6 @@ function App() {
   };
 
   const setWindowPreset = async (ratio: string) => {
-    const { getCurrentWindow, LogicalSize } = await import("@tauri-apps/api/window");
     const win = getCurrentWindow();
     await win.setDecorations(true);
     await win.setFullscreen(false);
@@ -721,7 +720,6 @@ function App() {
                   切换字体库
                 </button>
                 <button onClick={async () => {
-                  const { open } = await import("@tauri-apps/plugin-dialog");
                   const selected = await open({ multiple: false, filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg'] }] });
                   if (selected && typeof selected === 'string') {
                     const imageSrc = convertFileSrc(selected);
