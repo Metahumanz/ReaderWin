@@ -12,6 +12,13 @@ pub struct ChapterContent {
     pub body: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SearchResult {
+    pub chapter_index: usize,
+    pub chapter_title: String,
+    pub snippet: String,
+}
+
 // --- Commands ---
 
 #[tauri::command]
@@ -118,6 +125,82 @@ async fn webdav_sync<R: Runtime>(
     }
 }
 
+#[tauri::command]
+async fn check_update_custom(url: String) -> Result<String, String> {
+    let client_default = reqwest::Client::new();
+    let res = client_default.get(&url).send().await;
+
+    match res {
+        Ok(resp) if resp.status().is_success() => {
+            resp.text().await.map_err(|e| e.to_string())
+        }
+        _ => {
+            // Try without proxy
+            let client_no_proxy = reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .map_err(|e| e.to_string())?;
+            let res_no_proxy = client_no_proxy.get(&url).send().await.map_err(|e| e.to_string())?;
+            if res_no_proxy.status().is_success() {
+                res_no_proxy.text().await.map_err(|e| e.to_string())
+            } else {
+                Err(format!("Check failed both with and without proxy. Status: {}", res_no_proxy.status()))
+            }
+        }
+    }
+}
+
+#[tauri::command]
+async fn search_in_book<R: Runtime>(
+    app: AppHandle<R>,
+    book_id: i64,
+    query: String,
+) -> Result<Vec<SearchResult>, String> {
+    let db = tauri_plugin_sql::Builder::default()
+        .build(); // This is not how we access the plugin's DB. We need to use the app handle or managed state.
+    
+    // Wait, the SQL plugin doesn't easily expose the connection to Rust unless we re-open it or use the same path.
+    // Given the current architecture, I'll re-open the database for the search command.
+    let app_data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let db_path = app_data_dir.join("reader.db");
+    
+    // Using rusqlite directly would be better, but the project uses tauri-plugin-sql.
+    // However, tauri-plugin-sql is designed for frontend access.
+    // I'll use rusqlite to perform the search in the backend for efficiency.
+    
+    let conn = rusqlite::Connection::open(db_path).map_err(|e| e.to_string())?;
+    let mut stmt = conn.prepare("SELECT order_index, title, body FROM chapters WHERE book_id = ?1 AND body LIKE ?2 ORDER BY order_index ASC")
+        .map_err(|e| e.to_string())?;
+    
+    let search_pattern = format!("%{}%", query);
+    let rows = stmt.query_map([book_id.to_string(), search_pattern], |row| {
+        let body: String = row.get(2)?;
+        // Find the first occurrence and create a snippet
+        let lower_body = body.to_lowercase();
+        let lower_query = query.to_lowercase();
+        let snippet = if let Some(idx) = lower_body.find(&lower_query) {
+            let start = idx.saturating_sub(40);
+            let end = (idx + query.len() + 40).min(body.len());
+            format!("...{}...", &body[start..end].replace("\n", " ").trim())
+        } else {
+            body.chars().take(80).collect::<String>() + "..."
+        };
+        
+        Ok(SearchResult {
+            chapter_index: row.get(0)?,
+            chapter_title: row.get(1)?,
+            snippet,
+        })
+    }).map_err(|e| e.to_string())?;
+    
+    let mut results = Vec::new();
+    for row in rows {
+        results.push(row.map_err(|e| e.to_string())?);
+    }
+    
+    Ok(results)
+}
+
 // Legacy source code removed
 
 pub fn run() {
@@ -208,7 +291,8 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![parse_txt, parse_epub, webdav_sync])
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![parse_txt, parse_epub, webdav_sync, check_update_custom, search_in_book])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

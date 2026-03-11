@@ -14,6 +14,11 @@
     text-indent: 2em;
     margin-bottom: 0.5em;
   }
+
+  /* Force indentation on the first paragraph which might be special in some prose configs */
+  .prose p:first-of-type {
+    text-indent: 2em !important;
+  }
 }
 
 :root {
