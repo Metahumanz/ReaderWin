@@ -140,6 +140,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
+  const [appVersion, setAppVersion] = useState("0.1.8");
 
   // Selection context menu
   const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, text: string } | null>(null);
@@ -170,6 +171,8 @@ function App() {
         setReplacementRules(rules);
         await fetchBooks(_db);
         await loadSettings(_db);
+        const v = await getVersion();
+        setAppVersion(v);
       } catch (err) {
         console.error("Database initialization failed:", err);
       }
@@ -760,15 +763,21 @@ function App() {
               id="viewer-content"
               ref={viewerRef}
               onScroll={handleScroll}
-              className="h-full overflow-x-auto scroll-smooth snap-x snap-mandatory no-scrollbar block"
-              style={{
-                columnWidth: '100vw',
-                columnGap: '0px',
-                columnFill: 'auto',
-              }}
+              className="h-full overflow-x-auto scroll-smooth snap-x snap-mandatory no-scrollbar flex flex-row"
             >
               {windowChapters.map((chap) => (
-                <article key={chap.id} id={`chapter-${chap.index}`} className="h-full snap-start" style={{ breakBefore: 'column', breakInside: 'auto' }}>
+                <article 
+                  key={chap.id} 
+                  id={`chapter-${chap.index}`} 
+                  className="h-full snap-start flex-shrink-0" 
+                  style={{ 
+                    columnWidth: '100vw',
+                    columnGap: '0px',
+                    columnFill: 'auto',
+                    width: 'auto', // Let columns define width
+                    minWidth: '100vw'
+                  }}
+                >
                   <div
                     className="max-w-none mx-auto px-12 py-12"
                     style={{ width: `${contentWidth}px`, maxWidth: '90vw' }}
@@ -1123,7 +1132,7 @@ function App() {
                 </h2>
                 <div className="space-y-6">
                   <div className="p-6 bg-slate-900/50 border border-white/5 rounded-2xl">
-                    <div className="text-sm font-bold text-slate-300 mb-2">当前版本: 0.1.6</div>
+                    <div className="text-sm font-bold text-slate-300 mb-2">当前版本: {appVersion}</div>
                     <div className="text-xs text-slate-500 whitespace-pre-wrap leading-relaxed">{updateInfo || "点击下方按钮检查是否有新版本可用。"}</div>
                   </div>
                   <button
