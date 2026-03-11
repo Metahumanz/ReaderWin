@@ -73,14 +73,21 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
     useEffect(() => {
         const viewer = viewerRef.current;
         if (!viewer) return;
-        const ro = new ResizeObserver(() => {
-            // After resize, snap to the nearest page boundary
-            const page = Math.round(viewer.scrollLeft / viewer.clientWidth);
-            viewer.scrollLeft = page * viewer.clientWidth;
+        let lastWidth = viewer.clientWidth;
+        const ro = new ResizeObserver((entries) => {
+            const entry = entries[0];
+            if (!entry) return;
+            const currentWidth = entry.contentRect.width;
+            if (currentWidth && Math.abs(currentWidth - lastWidth) > 5) {
+                lastWidth = currentWidth;
+                // After resize, snap to the nearest page boundary
+                const page = Math.round(viewer.scrollLeft / currentWidth);
+                viewer.scrollLeft = page * currentWidth;
+            }
         });
         ro.observe(viewer);
         return () => ro.disconnect();
-    }, [windowChapters]); // re-attach when chapters change (viewer may remount)
+    }, [windowChapters.length > 0]); // only re-attach when viewer actually mounts from emptiness
 
     // --- Auto-save progress every 5 seconds ---
     useEffect(() => {
@@ -241,7 +248,7 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
             const nextItem: WindowChapter = { ...nextData, index: maxChap.index + 1 };
             const nextArr = [...windowChapters, nextItem];
             applyWindowChapters(
-                nextArr.length > 5 ? nextArr.slice(nextArr.length - 5) : nextArr,
+                nextArr.length > 15 ? nextArr.slice(nextArr.length - 15) : nextArr,
                 "append_drop_left"
             );
         }
@@ -259,7 +266,7 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
             const prevItem: WindowChapter = { ...prevData, index: minChap.index - 1 };
             const nextArr = [prevItem, ...windowChapters];
             applyWindowChapters(
-                nextArr.length > 5 ? nextArr.slice(0, 5) : nextArr,
+                nextArr.length > 15 ? nextArr.slice(0, 15) : nextArr,
                 "prepend_drop_right"
             );
         }
@@ -309,7 +316,7 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
         scrollTimeoutRef.current = setTimeout(() => {
             if (!viewerRef.current) return;
             const v = viewerRef.current;
-            const TRIGGER = v.clientWidth * 1.5;
+            const TRIGGER = v.clientWidth * 0.8;
             if (v.scrollLeft + v.clientWidth + TRIGGER >= v.scrollWidth) {
                 loadNextInWindow();
             } else if (v.scrollLeft <= TRIGGER) {
