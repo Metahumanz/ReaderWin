@@ -41,7 +41,7 @@ function VirtualTocList({ chapters, currentChapterIndex, onSelect }: { chapters:
   return (
     <div
       ref={containerRef}
-      className="flex-1 overflow-y-auto no-scrollbar"
+      className="flex-1 overflow-y-auto"
       onScroll={(e) => setScrollTop((e.target as HTMLDivElement).scrollTop)}
     >
       {/* Spacer to push virtual items to correct position */}
@@ -675,7 +675,7 @@ function App() {
         )}
 
         {/* Top Nav (Hidden in immersive unless menu open) */}
-        <div className={`h-16 bg-black/60 backdrop-blur-3xl border-b border-white/5 flex items-center px-6 justify-between z-50 shrink-0 transition-transform duration-500 ${immersiveMode && !readerMenuOpen ? '-translate-y-full' : 'translate-y-0'}`}>
+        <div className={`h-16 bg-black/60 border-b border-white/5 flex items-center px-6 justify-between z-50 shrink-0 transition-transform duration-500 ${immersiveMode && !readerMenuOpen ? '-translate-y-full' : 'translate-y-0'}`}>
           <button onClick={() => { setReaderOpen(false); toggleImmersive(false); fetchBooks(); }} className="p-2 hover:bg-white/10 rounded-xl transition-all active:scale-90">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>
           </button>
@@ -763,20 +763,19 @@ function App() {
               id="viewer-content"
               ref={viewerRef}
               onScroll={handleScroll}
-              className="h-full overflow-x-auto scroll-smooth snap-x snap-mandatory no-scrollbar flex flex-row"
+              className="h-full overflow-x-auto scroll-smooth snap-x snap-mandatory no-scrollbar block"
+              style={{
+                columnWidth: '100vw',
+                columnGap: '0px',
+                columnFill: 'auto',
+              }}
             >
               {windowChapters.map((chap) => (
                 <article 
                   key={chap.id} 
                   id={`chapter-${chap.index}`} 
-                  className="h-full snap-start flex-shrink-0" 
-                  style={{ 
-                    columnWidth: '100vw',
-                    columnGap: '0px',
-                    columnFill: 'auto',
-                    width: 'auto', // Let columns define width
-                    minWidth: '100vw'
-                  }}
+                  className="h-full snap-start block" 
+                  style={{ breakBefore: 'column', breakInside: 'auto' }}
                 >
                   <div
                     className="max-w-none mx-auto px-12 py-12"
@@ -807,7 +806,7 @@ function App() {
         {/* Reader Hub Menu Overlay */}
         {readerMenuOpen && !searchOpen && !tocOpen && (
           <div className="fixed inset-0 z-[100] flex items-end justify-center pb-10 animate-in fade-in duration-300">
-            <div className="absolute inset-0 bg-black/40 backdrop-blur-md" onClick={() => setReaderMenuOpen(false)} />
+            <div className="absolute inset-0 bg-black/40" onClick={() => setReaderMenuOpen(false)} />
             <div className="relative w-full max-w-xl px-6 animate-in slide-in-from-bottom-8 duration-500" onClick={(e) => e.stopPropagation()}>
               <div className="bg-slate-900/95 border border-white/10 rounded-[2rem] shadow-2xl p-6 space-y-5">
 
@@ -1152,7 +1151,7 @@ function App() {
 
         {/* Global Import Progress Overlay */}
         {importing && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/60 backdrop-blur-lg animate-in fade-in duration-300">
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-950/60 animate-in fade-in duration-300">
             <div className="text-center space-y-6">
               <div className="w-20 h-20 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin mx-auto" />
               <div>
