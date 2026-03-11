@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
+import { getVersion } from "@tauri-apps/api/app";
 import Database from "@tauri-apps/plugin-sql";
 import { open } from "@tauri-apps/plugin-dialog";
 import { check } from "@tauri-apps/plugin-updater";
@@ -247,15 +248,21 @@ function App() {
         const updateUrl = "https://github.com/Metahumanz/ReaderWin/releases/latest/download/update.json";
         const res: string = await invoke("check_update_custom", { url: updateUrl });
         const data = JSON.parse(res);
-        if (data.version !== "0.1.6") { // Placeholder check
-          setUpdateInfo(`(代理绕过模式) 发现新版本: ${data.version}。但自动安装可能仍需配置代理。`);
+        const currentVersion = await getVersion();
+        
+        // Robust version comparison: remove 'v' prefix if present
+        const cleanDataVersion = data.version.replace(/^v/, '');
+        const cleanCurrentVersion = currentVersion.replace(/^v/, '');
+
+        if (cleanDataVersion !== cleanCurrentVersion) {
+          setUpdateInfo(`(直连检查) 发现新版本: ${data.version}。本地版本: ${currentVersion}。请尝试点击“检查更新”按钮再次确认或手动下载。`);
         } else {
-          setUpdateInfo("当前已是最新版本。");
+          setUpdateInfo(`当前已是最新版本: ${currentVersion}`);
         }
       }
     } catch (err) {
       console.error(err);
-      setUpdateInfo("检查更新失败: " + err);
+      setUpdateInfo("检查更新失败 (可能是 GitHub 无法连接): " + err);
     } finally {
       setCheckingUpdate(false);
     }
