@@ -4,11 +4,14 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
 
 jobs:
   publish:
-    permissions:
-      contents: write
     strategy:
       fail-fast: false
       matrix:

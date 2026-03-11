@@ -770,12 +770,12 @@ function App() {
               {windowChapters.map((chap) => (
                 <article key={chap.id} id={`chapter-${chap.index}`} className="h-full snap-start" style={{ breakBefore: 'column', breakInside: 'auto' }}>
                   <div
-                    className="max-w-none mx-auto h-full px-12 py-12"
+                    className="max-w-none mx-auto px-12 py-12"
                     style={{ width: `${contentWidth}px`, maxWidth: '90vw' }}
                   >
                     <h1
                       className="font-black mb-12 text-white leading-tight border-l-8 border-indigo-500 pl-10 shrink-0"
-                      style={{ fontSize: `calc(${fontSize * 1.8}px + 1vw)` }}
+                      style={{ fontSize: `calc(${fontSize * 1.8}px + 1vw)`, breakInside: 'avoid' }}
                     >
                       {chap.title}
                     </h1>
