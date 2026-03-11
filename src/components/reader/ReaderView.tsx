@@ -203,7 +203,7 @@ export default function ReaderView({
                         id="viewer-content"
                         ref={viewerRef}
                         onScroll={onScroll}
-                        className="h-full overflow-x-auto scroll-smooth no-scrollbar block"
+                        className="h-full overflow-x-auto no-scrollbar block"
                         style={{ columnWidth: "100vw", columnGap: "0px", columnFill: "auto" }}
                     >
                         {windowChapters.map((chap) => (

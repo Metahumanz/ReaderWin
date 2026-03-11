@@ -41,6 +41,7 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
     const viewerRef = useRef<HTMLDivElement | null>(null);
     const scrollAnchorRef = useRef<ScrollAnchor | null>(null);
     const isLoadingEdges = useRef(false);
+    const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // --- Scroll anchor: fire AFTER layout is painted ---
     useLayoutEffect(() => {
@@ -304,12 +305,17 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
             }
         }
 
-        const TRIGGER = viewer.clientWidth * 1.5;
-        if (currentScrollLeft + viewer.clientWidth + TRIGGER >= viewer.scrollWidth) {
-            loadNextInWindow();
-        } else if (currentScrollLeft <= TRIGGER) {
-            loadPrevInWindow();
-        }
+        if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+        scrollTimeoutRef.current = setTimeout(() => {
+            if (!viewerRef.current) return;
+            const v = viewerRef.current;
+            const TRIGGER = v.clientWidth * 1.5;
+            if (v.scrollLeft + v.clientWidth + TRIGGER >= v.scrollWidth) {
+                loadNextInWindow();
+            } else if (v.scrollLeft <= TRIGGER) {
+                loadPrevInWindow();
+            }
+        }, 150);
     };
 
     // --- Navigate to next/prev chapter by scrolling ---
