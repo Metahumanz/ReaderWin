@@ -79,7 +79,6 @@ function App() {
   const [bgImage, setBgImage] = useState("");
   const [contextMenu, setContextMenu] = useState<{ x: number, y: number, bookId: number } | null>(null);
   const [importing, setImporting] = useState(false);
-  const progress = chapters.length > 0 ? Math.round((currentChapterIndex / Math.max(1, chapters.length - 1)) * 100) : 0;
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<string | null>(null);
 
