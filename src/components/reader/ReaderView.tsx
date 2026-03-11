@@ -155,7 +155,7 @@ export default function ReaderView({
                     <div
                         className="fixed z-[120] -translate-x-1/2 -translate-y-full bg-slate-800 border border-white/10 rounded-xl shadow-2xl p-1 flex gap-1 animate-in zoom-in-95 duration-200"
                         style={{ left: selectionMenu.x, top: selectionMenu.y }}
-                        onClick={(e) => e.stopPropagation()}
+                        onClick={(e: React.MouseEvent) => e.stopPropagation()}
                     >
                         <button
                             onClick={() => {
@@ -264,7 +264,6 @@ export default function ReaderView({
             {/* Search Overlay */}
             {searchOpen && (
                 <SearchOverlay
-                    currentBookId={currentBook?.id ?? null}
                     onClose={() => setSearchOpen(false)}
                     onJumpToChapter={(idx) => {
                         onLoadChapter(idx);

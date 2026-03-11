@@ -36,7 +36,7 @@ export default function ReaderMenu({
             <div className="absolute inset-0 bg-black/40" onClick={onClose} />
             <div
                 className="relative w-full max-w-xl px-6 animate-in slide-in-from-bottom-8 duration-500"
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e: React.MouseEvent) => e.stopPropagation()}
             >
                 <div className="bg-slate-900/95 border border-white/10 rounded-[2rem] shadow-2xl p-6 space-y-5">
 
@@ -85,7 +85,7 @@ export default function ReaderMenu({
                                 min="12"
                                 max="64"
                                 value={fontSize}
-                                onChange={(e) => onFontSizeChange(parseInt(e.target.value))}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => onFontSizeChange(parseInt(e.target.value))}
                                 className="flex-1 accent-indigo-500 h-1.5"
                             />
                             <button
@@ -109,7 +109,7 @@ export default function ReaderMenu({
                             max="4"
                             step="0.1"
                             value={lineHeight}
-                            onChange={(e) => onLineHeightChange(parseFloat(e.target.value))}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => onLineHeightChange(parseFloat(e.target.value))}
                             className="w-full accent-indigo-500 h-1.5"
                         />
                     </div>

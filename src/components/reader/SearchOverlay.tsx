@@ -8,7 +8,6 @@ interface SearchResult {
 }
 
 interface SearchOverlayProps {
-    currentBookId: number | null;
     onJumpToChapter: (idx: number) => void;
     onClose: () => void;
     onSearch: (query: string) => Promise<SearchResult[]>;
@@ -44,7 +43,7 @@ export default function SearchOverlay({
             />
             <div
                 className="relative w-[500px] h-[600px] bg-slate-900 border border-white/10 rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom-10 duration-500"
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e: React.MouseEvent) => e.stopPropagation()}
             >
                 {/* Search input */}
                 <div className="p-8 border-b border-white/5 shrink-0">
@@ -54,8 +53,8 @@ export default function SearchOverlay({
                             type="text"
                             placeholder="搜索书内内容..."
                             value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)}
+                            onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => e.key === "Enter" && handleSearch()}
                             className="w-full bg-white/5 border border-white/10 rounded-2xl px-6 py-4 text-white placeholder:text-slate-600 focus:border-indigo-500 outline-none transition-all"
                         />
                         <button

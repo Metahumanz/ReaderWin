@@ -1,6 +1,5 @@
 import { SyncIcon, PenIcon, LayoutIcon, DownloadIcon, ResetIcon, ArrowRightSmIcon } from "./icons";
 import type { Settings } from "../hooks/useSettings";
-import Database from "@tauri-apps/plugin-sql";
 
 interface ReplacementRule {
     id: number;
@@ -17,7 +16,6 @@ interface SettingsViewProps {
     appVersion: string;
     checkingUpdate: boolean;
     updateInfo: string | null;
-    db: Database | null;
     onSaveSetting: (key: string, value: string) => void;
     onUpdateSetting: <K extends keyof Settings>(key: K, value: Settings[K]) => void;
     onWebdavSync: (mode: "upload" | "download") => void;
@@ -34,7 +32,6 @@ export default function SettingsView({
     appVersion,
     checkingUpdate,
     updateInfo,
-    db,
     onSaveSetting,
     onUpdateSetting,
     onWebdavSync,
@@ -60,7 +57,7 @@ export default function SettingsView({
                             <input
                                 type="text"
                                 value={settings.webdavUrl}
-                                onChange={(e) => onUpdateSetting("webdavUrl", e.target.value)}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => onUpdateSetting("webdavUrl", e.target.value)}
                                 placeholder="https://dav.jianguoyun.com/dav/"
                                 className="w-full bg-slate-900/50 border border-white/5 rounded-xl px-4 py-4 text-white focus:border-indigo-500 outline-none transition-all"
                             />
@@ -71,7 +68,7 @@ export default function SettingsView({
                                 <input
                                     type="text"
                                     value={settings.webdavUser}
-                                    onChange={(e) => onUpdateSetting("webdavUser", e.target.value)}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => onUpdateSetting("webdavUser", e.target.value)}
                                     placeholder="Username"
                                     className="w-full bg-slate-900/50 border border-white/5 rounded-xl px-4 py-4 text-white focus:border-indigo-500 outline-none"
                                 />
@@ -81,7 +78,7 @@ export default function SettingsView({
                                 <input
                                     type="password"
                                     value={settings.webdavPass}
-                                    onChange={(e) => onUpdateSetting("webdavPass", e.target.value)}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => onUpdateSetting("webdavPass", e.target.value)}
                                     placeholder="••••••••"
                                     className="w-full bg-slate-900/50 border border-white/5 rounded-xl px-4 py-4 text-white focus:border-indigo-500 outline-none"
                                 />
@@ -175,7 +172,7 @@ export default function SettingsView({
                             <label className="text-xs font-black text-slate-500 uppercase tracking-widest pl-1">阅读默认字体</label>
                             <select
                                 value={settings.fontFamily}
-                                onChange={(e) => {
+                                onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
                                     onUpdateSetting("fontFamily", e.target.value);
                                     onSaveSetting("font_family", e.target.value);
                                 }}

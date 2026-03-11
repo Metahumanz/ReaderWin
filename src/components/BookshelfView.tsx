@@ -29,7 +29,7 @@ export default function BookshelfView({
             {books.map((book) => (
                 <div
                     key={book.id}
-                    onContextMenu={(e) => {
+                    onContextMenu={(e: React.MouseEvent) => {
                         e.preventDefault();
                         if (!importing) onContextMenu(e, book.id);
                     }}
@@ -40,8 +40,8 @@ export default function BookshelfView({
             <div
                 onClick={!importing ? onImport : undefined}
                 className={`aspect-[3/4] border-2 border-dashed border-slate-700/50 rounded-3xl flex flex-col items-center justify-center gap-4 text-slate-500 transition-all cursor-pointer group shadow-inner ${importing
-                        ? "opacity-50 cursor-not-allowed"
-                        : "hover:border-indigo-500/50 hover:text-indigo-400 hover:bg-indigo-500/5"
+                    ? "opacity-50 cursor-not-allowed"
+                    : "hover:border-indigo-500/50 hover:text-indigo-400 hover:bg-indigo-500/5"
                     }`}
             >
                 <div

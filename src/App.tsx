@@ -214,7 +214,7 @@ function App() {
   const handleDeleteRule = async (id: number) => {
     if (!db) return;
     await db.execute("DELETE FROM replacement_rules WHERE id = $1", [id]);
-    setReplacementRules((r) => r.filter((rule) => rule.id !== id));
+    setReplacementRules((r: any[]) => r.filter((rule: any) => rule.id !== id));
   };
 
   // ---- Open reader ----
@@ -278,7 +278,7 @@ function App() {
         >
           <button
             onClick={() => {
-              const book = books.find((b) => b.id === contextMenu.bookId);
+              const book = books.find((b: any) => b.id === contextMenu.bookId);
               if (book) openReader(book);
               setContextMenu(null);
             }}
@@ -358,7 +358,6 @@ function App() {
               appVersion={appVersion}
               checkingUpdate={checkingUpdate}
               updateInfo={updateInfo}
-              db={db}
               onSaveSetting={saveSetting}
               onUpdateSetting={updateSetting}
               onWebdavSync={handleWebdavSync}
@@ -397,7 +396,7 @@ function App() {
             />
             <div
               className="relative w-[400px] bg-slate-900 border border-white/10 rounded-[2.5rem] shadow-2xl p-8 space-y-6 animate-in zoom-in-95 duration-300"
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e: React.MouseEvent) => e.stopPropagation()}
             >
               <div className="space-y-1">
                 <h3 className="text-xl font-black text-white uppercase tracking-tighter">添加替换规则</h3>
@@ -411,7 +410,7 @@ function App() {
                   <input
                     type="text"
                     value={newRulePattern}
-                    onChange={(e) => setNewRulePattern(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewRulePattern(e.target.value)}
                     className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500 transition-all"
                     placeholder="例如: 广告文字"
                   />
@@ -423,7 +422,7 @@ function App() {
                   <input
                     type="text"
                     value={newRuleReplacement}
-                    onChange={(e) => setNewRuleReplacement(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewRuleReplacement(e.target.value)}
                     className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500 transition-all"
                     placeholder="留空则直接删除"
                   />
