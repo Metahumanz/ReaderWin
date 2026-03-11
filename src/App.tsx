@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useLayoutEffect } from "react";
 import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import Database from "@tauri-apps/plugin-sql";
@@ -59,7 +59,10 @@ function App() {
   const [currentBook, setCurrentBook] = useState<any>(null);
   const [chapters, setChapters] = useState<any[]>([]);
   const [currentChapterIndex, setCurrentChapterIndex] = useState(0);
-  const [content, setContent] = useState({ title: "", body: "" });
+  const [windowChapters, setWindowChapters] = useState<{ id: number; index: number; title: string; body: string; link: string }[]>([]);
+  const viewerRef = useRef<HTMLDivElement>(null);
+  const scrollAnchorRef = useRef<{ anchorChapterIndex: number, offsetFromAnchor: number, action: string } | null>(null);
+  const isLoadingEdges = useRef(false);
   const [loading, setLoading] = useState(false);
   const [books, setBooks] = useState<any[]>([]);
   const [db, setDb] = useState<Database | null>(null);
@@ -123,6 +126,33 @@ function App() {
     };
   }, []);
 
+  useLayoutEffect(() => {
+    if (!viewerRef.current || !scrollAnchorRef.current) return;
+    const viewer = viewerRef.current;
+    const { anchorChapterIndex, offsetFromAnchor, action } = scrollAnchorRef.current;
+    
+    const runAnchor = () => {
+        const el = document.getElementById(`chapter-${anchorChapterIndex}`);
+        if (el) {
+           const viewerRect = viewer.getBoundingClientRect();
+           const elRect = el.getBoundingClientRect();
+           const chapOffset = elRect.left - viewerRect.left + viewer.scrollLeft;
+           
+           let targetLeft = chapOffset + offsetFromAnchor;
+           
+           if (action === 'init' && offsetFromAnchor === 9999999) {
+               // scrollToEnd requested
+               targetLeft = chapOffset + el.scrollWidth - viewer.clientWidth;
+               if (targetLeft < chapOffset) targetLeft = chapOffset; // clamp
+           }
+           
+           viewer.scrollLeft = targetLeft;
+           scrollAnchorRef.current = null;
+        }
+    };
+    runAnchor();
+  }, [windowChapters, contentWidth, fontSize, lineHeight, letterSpacing, immersiveMode]);
+
   // Sync ToC Scroll — instantly position to current chapter
   useEffect(() => {
     if (tocOpen) {
@@ -135,17 +165,22 @@ function App() {
 
   // Save detailed progress
   useEffect(() => {
-    if (!readerOpen || !currentBook || !db) return;
+    if (!readerOpen || !currentBook || !db || !viewerRef.current) return;
 
     const saver = setInterval(async () => {
-      const el = document.getElementById('viewer-content');
-      if (el) {
-        await db.execute("UPDATE books SET progress_offset = $1 WHERE id = $2", [Math.round(el.scrollLeft), currentBook.id]);
+      const viewer = viewerRef.current;
+      if (viewer) {
+          const el = document.getElementById(`chapter-${currentChapterIndex}`);
+          if (el) {
+             const chapOffset = el.getBoundingClientRect().left - viewer.getBoundingClientRect().left + viewer.scrollLeft;
+             const relativeOffset = Math.max(0, viewer.scrollLeft - chapOffset);
+             await db.execute("UPDATE books SET progress_offset = $1 WHERE id = $2", [Math.round(relativeOffset), currentBook.id]);
+          }
       }
     }, 5000);
 
     return () => clearInterval(saver);
-  }, [readerOpen, currentBook, db]);
+  }, [readerOpen, currentBook, db, currentChapterIndex]);
 
   const fetchBooks = async (database = db) => {
     if (!database) return;
@@ -308,6 +343,174 @@ function App() {
     }
   };
 
+  const fetchChapterData = async (chapterId: number, database = db) => {
+    if (!database) return null;
+    const rows: any[] = await database.select("SELECT title, body, link FROM chapters WHERE id = $1", [chapterId]);
+    if (rows.length > 0) {
+      let { title, body, link } = rows[0];
+      if (link && !body) body = "此章节内容为网络链接，当前版本已关闭网络解析功能。";
+      return { id: chapterId, title, body, link };
+    }
+    return null;
+  };
+
+  const applyWindowChapters = (newArr: any[], action: string, forceAnchorIndex?: number, offset?: number) => {
+    const viewer = viewerRef.current;
+    if (viewer) {
+        let anchorIndex = forceAnchorIndex !== undefined ? forceAnchorIndex : currentChapterIndex;
+        const el = document.getElementById(`chapter-${anchorIndex}`);
+        if (el) {
+            const elRect = el.getBoundingClientRect();
+            const viewerRect = viewer.getBoundingClientRect();
+            const chapOffset = elRect.left - viewerRect.left + viewer.scrollLeft;
+            const offsetFromAnchor = offset !== undefined ? offset : (viewer.scrollLeft - chapOffset);
+            scrollAnchorRef.current = { action, anchorChapterIndex: anchorIndex, offsetFromAnchor };
+        } else if (forceAnchorIndex !== undefined) {
+             scrollAnchorRef.current = { action, anchorChapterIndex: forceAnchorIndex, offsetFromAnchor: offset || 0 };
+        }
+    } else if (forceAnchorIndex !== undefined) {
+        scrollAnchorRef.current = { action, anchorChapterIndex: forceAnchorIndex, offsetFromAnchor: offset || 0 };
+    }
+    setWindowChapters(newArr);
+  };
+
+  const loadChapter = async (chapterIdx: number, options: { restoreOffset?: boolean, scrollToEnd?: boolean } = {}, database = db) => {
+    if (!database || chapterIdx < 0 || chapterIdx >= chapters.length) return;
+    setLoading(true);
+    setCurrentChapterIndex(chapterIdx);
+    try {
+      const startIdx = Math.max(0, chapterIdx - 1);
+      const endIdx = Math.min(chapters.length - 1, chapterIdx + 1);
+      const toFetch = [];
+      for (let i = startIdx; i <= endIdx; i++) {
+         toFetch.push(fetchChapterData(chapters[i].id, database).then(data => data ? { index: i, ...data } : null));
+      }
+      const results = (await Promise.all(toFetch)).filter(c => c !== null);
+      
+      let offset = 0;
+      if (options.restoreOffset && currentBook?.progress_offset) {
+          offset = currentBook.progress_offset;
+      } else if (options.scrollToEnd) {
+          offset = 9999999; 
+      }
+      
+      applyWindowChapters(results, 'init', chapterIdx, offset);
+      
+      if (currentBook) {
+        await database.execute("UPDATE books SET progress_index = $1, last_read = CURRENT_TIMESTAMP WHERE id = $2", [chapterIdx, currentBook.id]);
+      }
+    } catch (err) { console.error(err); } finally { setLoading(false); }
+  };
+
+  const nextChapter = () => {
+    const nextIdx = currentChapterIndex + 1;
+    if (nextIdx < chapters.length) {
+       const el = document.getElementById(`chapter-${nextIdx}`);
+       if (el && viewerRef.current) {
+          const v = viewerRef.current;
+          const chapOffset = el.getBoundingClientRect().left - v.getBoundingClientRect().left + v.scrollLeft;
+          v.scrollTo({ left: chapOffset, behavior: 'smooth' });
+       } else {
+          loadChapter(nextIdx);
+       }
+    }
+  };
+
+  const prevChapter = (scrollToEnd = false) => {
+    const prevIdx = currentChapterIndex - 1;
+    if (prevIdx >= 0) {
+       const el = document.getElementById(`chapter-${prevIdx}`);
+       if (el && viewerRef.current) {
+          const v = viewerRef.current;
+          const chapOffset = el.getBoundingClientRect().left - v.getBoundingClientRect().left + v.scrollLeft;
+          if (scrollToEnd) {
+             const endOffset = chapOffset + el.scrollWidth - v.clientWidth;
+             v.scrollTo({ left: endOffset, behavior: 'smooth' });
+          } else {
+             v.scrollTo({ left: chapOffset, behavior: 'smooth' });
+          }
+       } else {
+          loadChapter(prevIdx, { scrollToEnd });
+       }
+    }
+  };
+
+  const loadNextInWindow = async () => {
+     if (isLoadingEdges.current || windowChapters.length === 0) return;
+     const maxChap = windowChapters[windowChapters.length - 1];
+     if (maxChap.index >= chapters.length - 1) return;
+     
+     isLoadingEdges.current = true;
+     const nextData = await fetchChapterData(chapters[maxChap.index + 1].id, db);
+     if (nextData) {
+        const nextArr = [...windowChapters, { index: maxChap.index + 1, ...nextData }];
+        if (nextArr.length > 5) {
+            applyWindowChapters(nextArr.slice(nextArr.length - 5), 'append_drop_left');
+        } else {
+            applyWindowChapters(nextArr, 'append');
+        }
+     }
+     isLoadingEdges.current = false;
+  };
+
+  const loadPrevInWindow = async () => {
+     if (isLoadingEdges.current || windowChapters.length === 0) return;
+     const minChap = windowChapters[0];
+     if (minChap.index <= 0) return;
+     
+     isLoadingEdges.current = true;
+     const prevData = await fetchChapterData(chapters[minChap.index - 1].id, db);
+     if (prevData) {
+        const nextArr = [{ index: minChap.index - 1, ...prevData }, ...windowChapters];
+        if (nextArr.length > 5) {
+            applyWindowChapters(nextArr.slice(0, 5), 'prepend_drop_right');
+        } else {
+            applyWindowChapters(nextArr, 'prepend');
+        }
+     }
+     isLoadingEdges.current = false;
+  };
+
+  const handleScroll = () => {
+    const viewer = viewerRef.current;
+    if (!viewer || windowChapters.length === 0 || isLoadingEdges.current) return;
+    
+    const currentScrollLeft = viewer.scrollLeft;
+    const center = currentScrollLeft + viewer.clientWidth / 2;
+    
+    let visibleIdx = windowChapters[0].index;
+    let minDiff = Infinity;
+    
+    for (const chap of windowChapters) {
+      const el = document.getElementById(`chapter-${chap.index}`);
+      if (el) {
+        const chapOffset = el.getBoundingClientRect().left - viewer.getBoundingClientRect().left + currentScrollLeft;
+        const elWidth = el.scrollWidth;
+        if (center >= chapOffset && center <= chapOffset + elWidth) {
+            visibleIdx = chap.index;
+            break;
+        } else {
+            const diff = Math.abs(chapOffset + elWidth / 2 - center);
+            if (diff < minDiff) { minDiff = diff; visibleIdx = chap.index; }
+        }
+      }
+    }
+    
+    if (visibleIdx !== currentChapterIndex) {
+       setCurrentChapterIndex(visibleIdx);
+       if (currentBook && db) {
+         db.execute("UPDATE books SET progress_index = $1, last_read = CURRENT_TIMESTAMP WHERE id = $2", [visibleIdx, currentBook.id]);
+       }
+    }
+
+    const TRIGGER_DISTANCE = viewer.clientWidth * 1.5;
+    if (currentScrollLeft + viewer.clientWidth + TRIGGER_DISTANCE >= viewer.scrollWidth) {
+        loadNextInWindow();
+    } else if (currentScrollLeft <= TRIGGER_DISTANCE) {
+        loadPrevInWindow();
+    }
+  };
+
   const openReader = async (book: any) => {
     if (!db) return;
     setCurrentBook(book);
@@ -317,61 +520,8 @@ function App() {
       const rows: any[] = await db.select("SELECT id, title, order_index FROM chapters WHERE book_id = $1 ORDER BY order_index ASC", [book.id]);
       setChapters(rows);
       const savedIdx = book.progress_index || 0;
-      setCurrentChapterIndex(savedIdx);
-      await loadChapter(rows[savedIdx].id, { restoreOffset: true }, db);
+      await loadChapter(savedIdx, { restoreOffset: true }, db);
     } catch (err) { console.error(err); } finally { setLoading(false); }
-  };
-
-  const loadChapter = async (chapterId: number, options: { restoreOffset?: boolean, scrollToEnd?: boolean } = {}, database = db) => {
-    if (!database) return;
-    setLoading(true);
-    try {
-      const rows: any[] = await database.select("SELECT title, body, link FROM chapters WHERE id = $1", [chapterId]);
-      if (rows.length > 0) {
-        let { title, body, link } = rows[0];
-
-        if (link && !body) {
-          body = "此章节内容为网络链接，当前版本已关闭网络解析功能。";
-        }
-
-        setContent({ title, body });
-        const currentIdx = chapters.findIndex(c => c.id === chapterId);
-        if (currentIdx !== -1 && currentBook) {
-          await database.execute("UPDATE books SET progress_index = $1, last_read = CURRENT_TIMESTAMP WHERE id = $2", [currentIdx, currentBook.id]);
-
-          setTimeout(() => {
-            const el = document.getElementById('viewer-content');
-            if (el) {
-              if (options.scrollToEnd) {
-                el.scrollLeft = el.scrollWidth;
-              } else if (options.restoreOffset && currentBook.progress_offset) {
-                el.scrollLeft = currentBook.progress_offset;
-              } else {
-                el.scrollLeft = 0;
-              }
-            }
-          }, 100);
-        }
-      }
-    } catch (err) { console.error(err); } finally { setLoading(false); }
-  };
-
-  const nextChapter = () => {
-    if (currentChapterIndex < chapters.length - 1) {
-      const nextIdx = currentChapterIndex + 1;
-      setCurrentChapterIndex(nextIdx);
-      loadChapter(chapters[nextIdx].id);
-      const el = document.getElementById('viewer-content');
-      if (el) el.scrollLeft = 0;
-    }
-  };
-
-  const prevChapter = (scrollToEnd = false) => {
-    if (currentChapterIndex > 0) {
-      const prevIdx = currentChapterIndex - 1;
-      setCurrentChapterIndex(prevIdx);
-      loadChapter(chapters[prevIdx].id, { scrollToEnd });
-    }
   };
 
   const handleSearch = async () => {
@@ -460,74 +610,66 @@ function App() {
         <div
           className="flex-1 relative overflow-hidden"
           onWheel={(e) => {
-            const el = document.getElementById('viewer-content');
-            if (!el || loading) return;
+            const viewer = viewerRef.current;
+            if (!viewer || loading) return;
             if (e.deltaY > 0) {
-              const start = el.scrollLeft;
-              el.scrollBy({ left: el.clientWidth, behavior: 'smooth' });
-              setTimeout(() => { if (Math.abs(el.scrollLeft - start) < 10) nextChapter(); }, 350);
+              viewer.scrollBy({ left: viewer.clientWidth, behavior: 'smooth' });
             } else {
-              const start = el.scrollLeft;
-              el.scrollBy({ left: -el.clientWidth, behavior: 'smooth' });
-              setTimeout(() => { if (Math.abs(el.scrollLeft - start) < 10 && start === 0) prevChapter(true); }, 350);
+              viewer.scrollBy({ left: -viewer.clientWidth, behavior: 'smooth' });
             }
           }}
         >
           {/* Click areas for turning pages & menu */}
           <div className="absolute inset-y-0 left-0 w-1/4 z-20 cursor-w-resize" onClick={() => {
-            const el = document.getElementById('viewer-content');
-            if (el) {
-              const start = el.scrollLeft;
-              el.scrollBy({ left: -el.clientWidth, behavior: 'smooth' });
-              setTimeout(() => { if (Math.abs(el.scrollLeft - start) < 10 && start === 0) prevChapter(true); }, 350);
-            }
+            const viewer = viewerRef.current;
+            if (viewer) viewer.scrollBy({ left: -viewer.clientWidth, behavior: 'smooth' });
           }} />
           <div className="absolute inset-x-1/4 inset-y-0 w-1/2 z-10 cursor-alias" onClick={() => setReaderMenuOpen(!readerMenuOpen)} />
           <div className="absolute inset-y-0 right-0 w-1/4 z-20 cursor-e-resize" onClick={() => {
-            const el = document.getElementById('viewer-content');
-            if (el) {
-              const start = el.scrollLeft;
-              el.scrollBy({ left: el.clientWidth, behavior: 'smooth' });
-              setTimeout(() => { if (Math.abs(el.scrollLeft - start) < 10) nextChapter(); }, 350);
-            }
+            const viewer = viewerRef.current;
+            if (viewer) viewer.scrollBy({ left: viewer.clientWidth, behavior: 'smooth' });
           }} />
 
-          {loading ? (
+          {loading && windowChapters.length === 0 ? (
             <div className="flex items-center justify-center h-full">
               <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-500/10 border-t-indigo-500"></div>
             </div>
           ) : (
             <div
               id="viewer-content"
-              className="h-full overflow-x-auto scroll-smooth snap-x snap-mandatory no-scrollbar"
+              ref={viewerRef}
+              onScroll={handleScroll}
+              className="h-full overflow-x-auto scroll-smooth snap-x snap-mandatory no-scrollbar block"
               style={{
                 columnWidth: '100vw',
                 columnGap: '0px',
                 columnFill: 'auto',
               }}
             >
-              <article className="h-full snap-start" style={{ width: '100vw' }}>
-                <div
-                  className="max-w-none mx-auto h-full px-12 py-12 flex flex-col"
-                  style={{ width: `${contentWidth}px`, maxWidth: '90vw' }}
-                >
-                  <h1
-                    className="font-black mb-12 text-white leading-tight border-l-8 border-indigo-500 pl-10 shrink-0"
-                    style={{ fontSize: `calc(${fontSize * 1.8}px + 1vw)` }}
-                  >
-                    {content.title}
-                  </h1>
+              {windowChapters.map((chap) => (
+                <article key={chap.id} id={`chapter-${chap.index}`} className="h-full snap-start" style={{ breakBefore: 'column', breakInside: 'auto' }}>
                   <div
-                    className="prose prose-invert max-w-none text-justify text-slate-200 flex-1"
-                    style={{
-                      fontSize: `calc(${fontSize}px + 0.2vw)`,
-                      lineHeight: lineHeight,
-                      letterSpacing: `${letterSpacing}px`,
-                    }}
-                    dangerouslySetInnerHTML={{ __html: content.body }}
-                  />
-                </div>
-              </article>
+                    className="max-w-none mx-auto h-full px-12 py-12 flex flex-col"
+                    style={{ width: `${contentWidth}px`, maxWidth: '90vw' }}
+                  >
+                    <h1
+                      className="font-black mb-12 text-white leading-tight border-l-8 border-indigo-500 pl-10 shrink-0"
+                      style={{ fontSize: `calc(${fontSize * 1.8}px + 1vw)` }}
+                    >
+                      {chap.title}
+                    </h1>
+                    <div
+                      className="prose prose-invert max-w-none text-justify text-slate-200 flex-1"
+                      style={{
+                        fontSize: `calc(${fontSize}px + 0.2vw)`,
+                        lineHeight: lineHeight,
+                        letterSpacing: `${letterSpacing}px`,
+                      }}
+                      dangerouslySetInnerHTML={{ __html: chap.body }}
+                    />
+                  </div>
+                </article>
+              ))}
             </div>
           )}
         </div>
@@ -634,7 +776,7 @@ function App() {
                     key={idx}
                     onClick={async () => {
                       setCurrentChapterIndex(res.chapter_index);
-                      await loadChapter(chapters[res.chapter_index].id);
+                      await loadChapter(res.chapter_index);
                       setSearchOpen(false);
                       setReaderMenuOpen(false);
                     }}
@@ -667,7 +809,7 @@ function App() {
                     id={`toc-item-${idx}`}
                     onClick={async () => {
                       setCurrentChapterIndex(idx);
-                      await loadChapter(chap.id);
+                      await loadChapter(idx);
                       setTocOpen(false);
                       setReaderMenuOpen(false);
                     }}
