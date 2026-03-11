@@ -35,7 +35,7 @@ async fn parse_txt(path: String) -> Result<Vec<ChapterContent>, String> {
         res.into_owned()
     };
     
-    let re = Regex::new(r"(?m)^(第[一二三四五六七八九十百千万\d]+[章节回].*|Chapter\s+\d+.*)$").unwrap();
+    let re = Regex::new(r"(?m)^[ \t]*(第[0-9一二三四五六七八九十百千万零\s]+[章节回]|[Cc]hapter\s+\d+).*$").unwrap();
     
     let mut last_idx = 0;
     let mut chapters = Vec::new();

@@ -140,7 +140,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searching, setSearching] = useState(false);
-  const [appVersion, setAppVersion] = useState("0.1.8");
+  const [appVersion, setAppVersion] = useState("0.1.9");
 
   // Selection context menu
   const [selectionMenu, setSelectionMenu] = useState<{ x: number, y: number, text: string } | null>(null);
@@ -227,15 +227,17 @@ function App() {
     runAnchor();
   }, [windowChapters, contentWidth, fontSize, lineHeight, letterSpacing, immersiveMode]);
 
-  // Sync ToC Scroll — instantly position to current chapter
+  // Sync ToC Scroll — instantly position to current chapter ONLY when it opens
   useEffect(() => {
     if (tocOpen) {
-      const activeItem = document.getElementById(`toc-item-${currentChapterIndex}`);
-      if (activeItem) {
-        activeItem.scrollIntoView({ behavior: 'instant', block: 'center' });
-      }
+      setTimeout(() => {
+        const activeItem = document.getElementById(`toc-item-${currentChapterIndex}`);
+        if (activeItem) {
+          activeItem.scrollIntoView({ behavior: 'instant', block: 'center' });
+        }
+      }, 50);
     }
-  }, [tocOpen, currentChapterIndex]);
+  }, [tocOpen]); // Change dependency to [tocOpen] to avoid scrolling while reading
 
   // Save detailed progress
   useEffect(() => {
@@ -415,6 +417,29 @@ function App() {
       alert(err);
       setImporting(false);
     }
+  };
+
+  const handleResetSettings = async () => {
+    if (!db) return;
+    const defaults = {
+      'font_size': '20',
+      'font_family': "'Georgia', serif",
+      'line_height': '1.8',
+      'letter_spacing': '0',
+      'content_width': '800',
+      'bg_image': ''
+    };
+    
+    for (const [key, val] of Object.entries(defaults)) {
+      await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ($1, $2)", [key, val]);
+    }
+    
+    setFontSize(20);
+    setFontFamily("'Georgia', serif");
+    setLineHeight(1.8);
+    setLetterSpacing(0);
+    setContentWidth(800);
+    setBgImage("");
   };
 
   const fetchChapterData = async (chapterId: number, database = db) => {
@@ -662,7 +687,7 @@ function App() {
         style={{
           fontFamily,
           backgroundColor: bgImage ? 'transparent' : '#1c1c1c',
-          backgroundImage: bgImage ? `url(${bgImage})` : 'none',
+          backgroundImage: bgImage ? `url(${convertFileSrc(bgImage)})` : 'none',
           backgroundSize: 'cover',
           backgroundPosition: 'center'
         }}
@@ -1119,6 +1144,15 @@ function App() {
                       <button onClick={() => setWindowPreset("4:3")} className="py-3 bg-slate-900/50 hover:bg-slate-800 border border-white/5 rounded-xl text-xs font-bold hover:border-indigo-500 transition-all">4:3 标准</button>
                       <button onClick={() => setWindowPreset("3:4")} className="py-3 bg-slate-900/50 hover:bg-slate-800 border border-white/5 rounded-xl text-xs font-bold hover:border-indigo-500 transition-all">3:4 文档</button>
                     </div>
+                  </div>
+                  <div className="pt-4">
+                    <button 
+                      onClick={handleResetSettings}
+                      className="w-full py-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-2xl border border-white/5 shadow-xl active:scale-95 transition-all text-sm flex items-center justify-center gap-2"
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M3 21v-5h5"></path></svg>
+                      恢复全套默认预览设置
+                    </button>
                   </div>
                 </div>
               </div>
