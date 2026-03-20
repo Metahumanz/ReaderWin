@@ -188,11 +188,17 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
         book: any,
         options: { restoreOffset?: boolean; scrollToEnd?: boolean } = {}
     ) => {
+        // Use the provided list or fall back to state
         const chapList = chapterList.length > 0 ? chapterList : chapters;
         
-        console.log("loadChapter called:", { chapterIdx, chapListLength: chapList.length, bookId: book?.id });
+        console.log("loadChapter:", { 
+            requestedIdx: chapterIdx, 
+            listLength: chapList.length,
+            bookId: book?.id,
+            savedProgress: book?.progress_index
+        });
         
-        // Validate inputs
+        // Early validation
         if (!db) {
             console.error("loadChapter: database not ready");
             return;
@@ -201,42 +207,48 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
             console.error("loadChapter: empty chapter list");
             return;
         }
-        if (chapterIdx < 0 || chapterIdx >= chapList.length) {
-            console.error("loadChapter: invalid index", chapterIdx, "length:", chapList.length);
-            // Auto-fix: clamp to valid range
-            chapterIdx = Math.max(0, Math.min(chapterIdx, chapList.length - 1));
-            console.log("loadChapter: clamped to", chapterIdx);
+        
+        // Clamp index to valid range - THIS IS CRITICAL
+        const validIdx = Math.max(0, Math.min(chapterIdx, chapList.length - 1));
+        if (validIdx !== chapterIdx) {
+            console.warn("loadChapter: clamped index from", chapterIdx, "to", validIdx);
         }
-        if (!chapList[chapterIdx]) {
-            console.error("loadChapter: chapter not found at index", chapterIdx);
+        
+        if (!chapList[validIdx]) {
+            console.error("loadChapter: chapter not found at valid index", validIdx);
             return;
         }
 
         setLoading(true);
-        setCurrentChapterIndex(chapterIdx);
+        setCurrentChapterIndex(validIdx);
         
         try {
-            const startIdx = Math.max(0, chapterIdx - 1);
-            const endIdx = Math.min(chapList.length - 1, chapterIdx + 1);
+            // Calculate which chapters to load (prev, current, next)
+            const startIdx = Math.max(0, validIdx - 1);
+            const endIdx = Math.min(chapList.length - 1, validIdx + 1);
             
-            console.log("loadChapter: fetching chapters", startIdx, "to", endIdx);
+            console.log("loadChapter: fetching range", startIdx, "-", endIdx);
 
-            const toFetch: Promise<WindowChapter | null>[] = [];
+            // Fetch all chapters in parallel
+            const fetchPromises: Promise<WindowChapter | null>[] = [];
             for (let i = startIdx; i <= endIdx; i++) {
-                if (chapList[i]) {
-                    toFetch.push(
-                        fetchChapterData(chapList[i].id).then((data) =>
-                            data ? { ...data, index: i } : null
-                        )
+                if (chapList[i]?.id) {
+                    fetchPromises.push(
+                        fetchChapterData(chapList[i].id)
+                            .then(data => data ? { ...data, index: i } : null)
+                            .catch(err => {
+                                console.error("loadChapter: fetch error for index", i, err);
+                                return null;
+                            })
                     );
                 }
             }
             
-            const results = (await Promise.all(toFetch)).filter(
+            const results = (await Promise.all(fetchPromises)).filter(
                 (c): c is WindowChapter => c !== null
             );
             
-            console.log("loadChapter: loaded", results.length, "chapters");
+            console.log("loadChapter: fetched", results.length, "chapters");
 
             if (results.length === 0) {
                 console.error("loadChapter: no chapters loaded");
@@ -244,6 +256,7 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
                 return;
             }
 
+            // Calculate scroll offset
             let offset = 0;
             if (options.restoreOffset && book?.progress_offset) {
                 offset = book.progress_offset;
@@ -251,13 +264,15 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
                 offset = 9999999;
             }
 
-            applyWindowChapters(results, "init", chapterIdx, offset);
-            console.log("loadChapter: applied chapters successfully");
+            // Apply chapters to window
+            applyWindowChapters(results, "init", validIdx, offset);
+            console.log("loadChapter: applied chapters for index", validIdx);
 
-            if (book && db) {
+            // Save progress to database
+            if (book?.id && db) {
                 await db.execute(
                     "UPDATE books SET progress_index = $1, last_read = CURRENT_TIMESTAMP WHERE id = $2",
-                    [chapterIdx, book.id]
+                    [validIdx, book.id]
                 );
             }
         } catch (err) {

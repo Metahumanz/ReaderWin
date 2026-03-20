@@ -35,7 +35,8 @@ async fn parse_txt(path: String) -> Result<Vec<ChapterContent>, String> {
         res.into_owned()
     };
     
-    let re = Regex::new(r"(?m)^[ \t]*(第[0-9一二三四五六七八九十百千万零\s]+[章节回]|[Cc]hapter\s+\d+).*$").unwrap();
+    // Support both Arabic numerals (第1999章) and Chinese numbers (第二千章, 第两千章)
+    let re = Regex::new(r"(?m)^[ \t]*(第[0-9一二三四五六七八九十百千万零两\s]+[章节回]|[Cc]hapter\s+\d+).*$").unwrap();
     
     let mut last_idx = 0;
     let mut chapters = Vec::new();
@@ -69,7 +70,7 @@ async fn parse_epub(path: String) -> Result<Vec<ChapterContent>, String> {
     let mut doc = EpubDoc::new(&path).map_err(|e| e.to_string())?;
     let mut chapters = Vec::new();
 
-    // Collect toc entries first to avoid borrow conflict with get_resource_str(&mut self)
+    // Try to get chapters from table of contents first
     let toc_entries: Vec<(String, String)> = doc.toc
         .iter()
         .map(|entry| {
@@ -85,12 +86,32 @@ async fn parse_epub(path: String) -> Result<Vec<ChapterContent>, String> {
         })
         .collect();
 
-    for (title, content_path) in toc_entries {
-        if let Ok(content) = doc.get_resource_str(&content_path) {
-            chapters.push(ChapterContent {
-                title,
-                body: content,
-            });
+    if !toc_entries.is_empty() {
+        for (title, content_path) in toc_entries {
+            if let Ok(content) = doc.get_resource_str(&content_path) {
+                if !content.trim().is_empty() {
+                    chapters.push(ChapterContent {
+                        title,
+                        body: content,
+                    });
+                }
+            }
+        }
+    }
+
+    // Fallback: if no TOC or no chapters found, use spine
+    if chapters.is_empty() {
+        let spine_items = doc.spine.clone();
+        for (idx, item_id) in spine_items.iter().enumerate() {
+            if let Ok(content) = doc.get_resource_str(item_id) {
+                if !content.trim().is_empty() {
+                    let title = format!("Chapter {}", idx + 1);
+                    chapters.push(ChapterContent {
+                        title,
+                        body: content,
+                    });
+                }
+            }
         }
     }
 
