@@ -65,10 +65,15 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
         if (offsetFromAnchor === 9999999) {
             // scrollToEnd sentinel
             targetLeft = chapOffset + el.scrollWidth - viewer.clientWidth;
-            if (targetLeft < chapOffset) targetLeft = chapOffset;
+            // Ensure we don't scroll past the chapter start
+            targetLeft = Math.max(chapOffset, targetLeft);
         } else {
             targetLeft = chapOffset + offsetFromAnchor;
         }
+
+        // Clamp to valid scroll range
+        const maxScroll = viewer.scrollWidth - viewer.clientWidth;
+        targetLeft = Math.max(0, Math.min(targetLeft, maxScroll));
 
         viewer.scrollLeft = targetLeft;
         scrollAnchorRef.current = null;

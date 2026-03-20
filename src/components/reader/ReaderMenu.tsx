@@ -14,6 +14,7 @@ interface ReaderMenuProps {
     onLineHeightChange: (v: number) => void;
     onToggleFont: () => void;
     onPickBgImage: () => void;
+    onGoToChapter: (idx: number) => void;
 }
 
 export default function ReaderMenu({
@@ -30,6 +31,7 @@ export default function ReaderMenu({
     onLineHeightChange,
     onToggleFont,
     onPickBgImage,
+    onGoToChapter,
 }: ReaderMenuProps) {
     return (
         <div className="fixed inset-0 z-[100] flex items-end justify-center pb-10 animate-in fade-in duration-300">
@@ -39,6 +41,22 @@ export default function ReaderMenu({
                 onClick={(e: React.MouseEvent) => e.stopPropagation()}
             >
                 <div className="bg-slate-900/95 border border-white/10 rounded-[2rem] shadow-2xl p-6 space-y-5">
+
+                    {/* Chapter progress slider - NEW */}
+                    <div className="space-y-1.5">
+                        <div className="flex justify-between text-[10px] font-black text-slate-500 uppercase tracking-[0.15em]">
+                            <span>章节进度</span>
+                            <span className="text-indigo-400">{currentChapterIndex + 1} / {totalChapters}</span>
+                        </div>
+                        <input
+                            type="range"
+                            min="0"
+                            max={totalChapters - 1}
+                            value={currentChapterIndex}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => onGoToChapter(parseInt(e.target.value))}
+                            className="w-full accent-indigo-500 h-1.5"
+                        />
+                    </div>
 
                     {/* Navigation row */}
                     <div className="flex items-center gap-3">

@@ -204,7 +204,11 @@ export default function ReaderView({
                         ref={viewerRef}
                         onScroll={onScroll}
                         className="h-full overflow-x-auto no-scrollbar block"
-                        style={{ columnWidth: "100vw", columnGap: "0px", columnFill: "auto" }}
+                        style={{ 
+                            columnWidth: settings.immersiveMode ? "100%" : "100vw", 
+                            columnGap: "0px", 
+                            columnFill: "auto" 
+                        }}
                     >
                         {windowChapters.map((chap) => (
                             <article
@@ -214,11 +218,14 @@ export default function ReaderView({
                                 style={{ breakBefore: "column", breakInside: "auto" }}
                             >
                                 <div
-                                    className="max-w-none mx-auto px-12 py-12"
-                                    style={{ width: `${settings.contentWidth}px`, maxWidth: "90vw" }}
+                                    className="max-w-none mx-auto px-4 md:px-12 py-8 md:py-12"
+                                    style={{ 
+                                        width: settings.immersiveMode ? "100%" : `${settings.contentWidth}px`, 
+                                        maxWidth: settings.immersiveMode ? "100%" : "90vw" 
+                                    }}
                                 >
                                     <h1
-                                        className="font-black mb-12 text-white leading-tight border-l-8 border-indigo-500 pl-10 shrink-0"
+                                        className="font-black mb-8 md:mb-12 text-white leading-tight border-l-4 md:border-l-8 border-indigo-500 pl-6 md:pl-10 shrink-0"
                                         style={{
                                             fontFamily: settings.fontFamily,
                                             fontSize: `calc(${settings.fontSize * 1.8}px + 1vw)`,
@@ -234,6 +241,8 @@ export default function ReaderView({
                                             fontSize: `calc(${settings.fontSize}px + 0.2vw)`,
                                             lineHeight: settings.lineHeight,
                                             letterSpacing: `${settings.letterSpacing}px`,
+                                            textAlign: "justify",
+                                            textAlignLast: "left",
                                         }}
                                         dangerouslySetInnerHTML={{ __html: chap.body }}
                                     />
@@ -260,6 +269,7 @@ export default function ReaderView({
                     onLineHeightChange={onLineHeightChange}
                     onToggleFont={onToggleFont}
                     onPickBgImage={onPickBgImage}
+                    onGoToChapter={(idx) => { onLoadChapter(idx); setReaderMenuOpen(false); }}
                 />
             )}
 
