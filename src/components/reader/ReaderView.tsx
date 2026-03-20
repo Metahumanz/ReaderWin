@@ -173,23 +173,32 @@ export default function ReaderView({
                     </div>
                 )}
 
-                {/* Click zones */}
+                {/* Click zones for page navigation */}
                 <div
                     className="absolute inset-y-0 left-0 w-1/4 z-20 cursor-w-resize"
-                    onClick={() => {
+                    onClick={(e: React.MouseEvent) => {
+                        e.stopPropagation();
                         const viewer = viewerRef.current;
-                        if (viewer) viewer.scrollBy({ left: -viewer.clientWidth, behavior: "smooth" });
+                        if (viewer) {
+                            viewer.scrollBy({ left: -viewer.clientWidth, behavior: "smooth" });
+                        }
                     }}
                 />
                 <div
                     className="absolute inset-x-1/4 inset-y-0 w-1/2 z-10 cursor-alias"
-                    onClick={() => setReaderMenuOpen(!readerMenuOpen)}
+                    onClick={(e: React.MouseEvent) => {
+                        e.stopPropagation();
+                        setReaderMenuOpen(!readerMenuOpen);
+                    }}
                 />
                 <div
                     className="absolute inset-y-0 right-0 w-1/4 z-20 cursor-e-resize"
-                    onClick={() => {
+                    onClick={(e: React.MouseEvent) => {
+                        e.stopPropagation();
                         const viewer = viewerRef.current;
-                        if (viewer) viewer.scrollBy({ left: viewer.clientWidth, behavior: "smooth" });
+                        if (viewer) {
+                            viewer.scrollBy({ left: viewer.clientWidth, behavior: "smooth" });
+                        }
                     }}
                 />
 
