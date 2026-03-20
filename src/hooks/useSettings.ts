@@ -163,8 +163,10 @@ export function useSettings(db: Database | null) {
     };
 
     // Getter for the actual CSS background image value
+    // Tauri v2 convertFileSrc: convertFileSrc(filePath, protocol)
+    // On Windows, paths like C:\path\to\file.jpg need to be converted to asset:// URLs
     const bgImageUrl = settings.bgImagePath
-        ? convertFileSrc(settings.bgImagePath)
+        ? convertFileSrc(settings.bgImagePath, "asset")
         : "";
 
     return {
