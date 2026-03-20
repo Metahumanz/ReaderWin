@@ -177,21 +177,27 @@ function App() {
         }
       } else {
         setUpdateInfo("普通检查未发现更新，尝试绕过代理检查...");
-        const updateUrl =
-          "https://github.com/Metahumanz/ReaderWin/releases/latest/download/update.json";
-        const res: string = await invoke("check_update_custom", { url: updateUrl });
-        const data = JSON.parse(res);
-        const currentVersion = await getVersion();
-        const cleanData = data.version.replace(/^v/, "");
-        const cleanCurrent = currentVersion.replace(/^v/, "");
-        if (cleanData !== cleanCurrent) {
-          setUpdateInfo(`(直连检查) 发现新版本: ${data.version}。本地: ${currentVersion}。请手动下载。`);
-        } else {
-          setUpdateInfo(`当前已是最新版本: ${currentVersion}`);
+        try {
+          const updateUrl = "https://github.com/Metahumanz/ReaderWin/releases/latest/download/update.json";
+          const res: string = await invoke("check_update_custom", { url: updateUrl });
+          const data = JSON.parse(res);
+          const currentVersion = await getVersion();
+          const cleanData = data.version.replace(/^v/, "");
+          const cleanCurrent = currentVersion.replace(/^v/, "");
+          if (cleanData !== cleanCurrent) {
+            setUpdateInfo(`(直连检查) 发现新版本: ${data.version}。本地: ${currentVersion}。\n请访问 GitHub Releases 手动下载。`);
+          } else {
+            setUpdateInfo(`当前已是最新版本: ${currentVersion}`);
+          }
+        } catch (proxyErr) {
+          console.error("Proxy check failed:", proxyErr);
+          const currentVersion = await getVersion();
+          setUpdateInfo(`当前版本: ${currentVersion}\n无法连接到 GitHub，请手动检查更新。`);
         }
       }
     } catch (err) {
-      setUpdateInfo("检查更新失败 (可能是 GitHub 无法连接): " + err);
+      console.error("Update check failed:", err);
+      setUpdateInfo("检查更新失败: " + String(err));
     } finally {
       setCheckingUpdate(false);
     }

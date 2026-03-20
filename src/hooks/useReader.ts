@@ -171,26 +171,48 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
         options: { restoreOffset?: boolean; scrollToEnd?: boolean } = {}
     ) => {
         const chapList = chapterList.length > 0 ? chapterList : chapters;
-        if (!db || chapterIdx < 0 || chapterIdx >= chapList.length) return;
+        
+        // Validate inputs
+        if (!db) {
+            console.error("loadChapter: database not ready");
+            return;
+        }
+        if (chapterIdx < 0 || chapterIdx >= chapList.length) {
+            console.error("loadChapter: invalid index", chapterIdx, "length:", chapList.length);
+            return;
+        }
+        if (!chapList[chapterIdx]) {
+            console.error("loadChapter: chapter not found at index", chapterIdx);
+            return;
+        }
 
         setLoading(true);
         setCurrentChapterIndex(chapterIdx);
+        
         try {
             const startIdx = Math.max(0, chapterIdx - 1);
             const endIdx = Math.min(chapList.length - 1, chapterIdx + 1);
 
             const toFetch: Promise<WindowChapter | null>[] = [];
             for (let i = startIdx; i <= endIdx; i++) {
-                const idx = i;
-                toFetch.push(
-                    fetchChapterData(chapList[idx].id).then((data) =>
-                        data ? { ...data, index: idx } : null
-                    )
-                );
+                if (chapList[i]) {
+                    toFetch.push(
+                        fetchChapterData(chapList[i].id).then((data) =>
+                            data ? { ...data, index: i } : null
+                        )
+                    );
+                }
             }
+            
             const results = (await Promise.all(toFetch)).filter(
                 (c): c is WindowChapter => c !== null
             );
+
+            if (results.length === 0) {
+                console.error("loadChapter: no chapters loaded");
+                setLoading(false);
+                return;
+            }
 
             let offset = 0;
             if (options.restoreOffset && book?.progress_offset) {
@@ -199,7 +221,7 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
                 offset = 9999999;
             }
 
-            applyWindowChapters(results as WindowChapter[], "init", chapterIdx, offset);
+            applyWindowChapters(results, "init", chapterIdx, offset);
 
             if (book && db) {
                 await db.execute(

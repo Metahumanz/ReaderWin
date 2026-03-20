@@ -220,6 +220,7 @@ export default function ReaderView({
                                     <h1
                                         className="font-black mb-12 text-white leading-tight border-l-8 border-indigo-500 pl-10 shrink-0"
                                         style={{
+                                            fontFamily: settings.fontFamily,
                                             fontSize: `calc(${settings.fontSize * 1.8}px + 1vw)`,
                                             breakInside: "avoid",
                                         }}
@@ -229,6 +230,7 @@ export default function ReaderView({
                                     <div
                                         className="prose prose-invert max-w-none text-justify text-slate-200"
                                         style={{
+                                            fontFamily: settings.fontFamily,
                                             fontSize: `calc(${settings.fontSize}px + 0.2vw)`,
                                             lineHeight: settings.lineHeight,
                                             letterSpacing: `${settings.letterSpacing}px`,
