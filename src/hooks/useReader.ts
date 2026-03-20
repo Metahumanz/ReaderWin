@@ -113,29 +113,47 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
     // --- Fetch & apply replacement rules on chapter body ---
     const fetchChapterData = async (chapterId: number): Promise<ChapterData | null> => {
         if (!db) return null;
-        const rows: any[] = await db.select(
-            "SELECT title, body, link FROM chapters WHERE id = $1",
-            [chapterId]
-        );
-        if (rows.length === 0) return null;
-
-        let { title, body, link } = rows[0];
-        if (link && !body) body = "此章节内容为网络链接，当前版本已关闭网络解析功能。";
-
-        if (replacementRules.length > 0 && body) {
-            for (const rule of replacementRules) {
-                if (!rule.active) continue;
-                try {
-                    if (rule.is_regex) {
-                        body = body.replace(new RegExp(rule.pattern, "g"), rule.replacement);
-                    } else {
-                        body = body.split(rule.pattern).join(rule.replacement);
-                    }
-                } catch { /* ignore invalid regex */ }
+        
+        try {
+            const rows: any[] = await db.select(
+                "SELECT title, body, link FROM chapters WHERE id = $1",
+                [chapterId]
+            );
+            if (rows.length === 0) {
+                console.warn("fetchChapterData: no data for chapter", chapterId);
+                return null;
             }
-        }
 
-        return { id: chapterId, title, body, link };
+            let { title, body, link } = rows[0];
+            
+            // Log large content
+            if (body && body.length > 1000000) {
+                console.warn("fetchChapterData: large chapter", chapterId, "size:", body.length);
+            }
+            
+            if (link && !body) body = "此章节内容为网络链接，当前版本已关闭网络解析功能。";
+
+            // Apply replacement rules (limit to prevent slowdown)
+            if (replacementRules.length > 0 && body && replacementRules.length < 100) {
+                for (const rule of replacementRules) {
+                    if (!rule.active) continue;
+                    try {
+                        if (rule.is_regex) {
+                            body = body.replace(new RegExp(rule.pattern, "g"), rule.replacement);
+                        } else {
+                            body = body.split(rule.pattern).join(rule.replacement);
+                        }
+                    } catch (e) { 
+                        console.warn("fetchChapterData: invalid rule", rule.pattern, e);
+                    }
+                }
+            }
+
+            return { id: chapterId, title, body, link };
+        } catch (err) {
+            console.error("fetchChapterData error for chapter", chapterId, ":", err);
+            return null;
+        }
     };
 
     // --- Apply new window chapters, preserving scroll position ---
@@ -172,14 +190,22 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
     ) => {
         const chapList = chapterList.length > 0 ? chapterList : chapters;
         
+        console.log("loadChapter called:", { chapterIdx, chapListLength: chapList.length, bookId: book?.id });
+        
         // Validate inputs
         if (!db) {
             console.error("loadChapter: database not ready");
             return;
         }
+        if (chapList.length === 0) {
+            console.error("loadChapter: empty chapter list");
+            return;
+        }
         if (chapterIdx < 0 || chapterIdx >= chapList.length) {
             console.error("loadChapter: invalid index", chapterIdx, "length:", chapList.length);
-            return;
+            // Auto-fix: clamp to valid range
+            chapterIdx = Math.max(0, Math.min(chapterIdx, chapList.length - 1));
+            console.log("loadChapter: clamped to", chapterIdx);
         }
         if (!chapList[chapterIdx]) {
             console.error("loadChapter: chapter not found at index", chapterIdx);
@@ -192,6 +218,8 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
         try {
             const startIdx = Math.max(0, chapterIdx - 1);
             const endIdx = Math.min(chapList.length - 1, chapterIdx + 1);
+            
+            console.log("loadChapter: fetching chapters", startIdx, "to", endIdx);
 
             const toFetch: Promise<WindowChapter | null>[] = [];
             for (let i = startIdx; i <= endIdx; i++) {
@@ -207,6 +235,8 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
             const results = (await Promise.all(toFetch)).filter(
                 (c): c is WindowChapter => c !== null
             );
+            
+            console.log("loadChapter: loaded", results.length, "chapters");
 
             if (results.length === 0) {
                 console.error("loadChapter: no chapters loaded");
@@ -222,6 +252,7 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
             }
 
             applyWindowChapters(results, "init", chapterIdx, offset);
+            console.log("loadChapter: applied chapters successfully");
 
             if (book && db) {
                 await db.execute(
@@ -238,23 +269,37 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
 
     // --- Open a book ---
     const openBook = async (book: any): Promise<ChapterMeta[]> => {
-        if (!db) return [];
+        if (!db) {
+            console.error("openBook: database not ready");
+            return [];
+        }
         setCurrentBook(book);
         setLoading(true);
         try {
+            console.log("openBook: loading chapters for book", book.id);
             const rows: ChapterMeta[] = await db.select(
                 "SELECT id, title, order_index FROM chapters WHERE book_id = $1 ORDER BY order_index ASC",
                 [book.id]
             );
+            console.log("openBook: loaded", rows.length, "chapters");
             setChapters(rows);
-            const savedIdx = book.progress_index || 0;
-            await loadChapter(savedIdx, rows, book, { restoreOffset: true });
+            
+            // Clamp saved index to valid range
+            const savedIdx = Math.min(book.progress_index || 0, rows.length - 1);
+            console.log("openBook: opening chapter", savedIdx, "of", rows.length);
+            
+            if (rows.length === 0) {
+                console.error("openBook: no chapters found for book", book.id);
+                setLoading(false);
+                return [];
+            }
+            
+            await loadChapter(Math.max(0, savedIdx), rows, book, { restoreOffset: true });
             return rows;
         } catch (err) {
-            console.error(err);
-            return [];
-        } finally {
+            console.error("openBook error:", err);
             setLoading(false);
+            return [];
         }
     };
 

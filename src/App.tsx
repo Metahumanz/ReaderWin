@@ -225,8 +225,15 @@ function App() {
 
   // ---- Open reader ----
   const openReader = async (book: any) => {
-    await reader.openBook(book);
-    setReaderOpen(true);
+    try {
+      console.log("openReader: opening book", book.id, book.title);
+      await reader.openBook(book);
+      console.log("openReader: book opened successfully");
+      setReaderOpen(true);
+    } catch (err) {
+      console.error("openReader error:", err);
+      alert("打开书籍失败: " + err);
+    }
   };
 
   const closeReader = async () => {
