@@ -50,7 +50,12 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
         const { anchorChapterIndex, offsetFromAnchor } = scrollAnchorRef.current;
 
         const el = document.getElementById(`chapter-${anchorChapterIndex}`);
-        if (!el) return;
+        if (!el) {
+            console.warn("useLayoutEffect: chapter element not found", anchorChapterIndex);
+            // Reset scroll anchor if element not found
+            scrollAnchorRef.current = null;
+            return;
+        }
 
         const viewerRect = viewer.getBoundingClientRect();
         const elRect = el.getBoundingClientRect();
@@ -112,13 +117,19 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
 
     // --- Fetch & apply replacement rules on chapter body ---
     const fetchChapterData = async (chapterId: number): Promise<ChapterData | null> => {
-        if (!db) return null;
+        if (!db) {
+            console.warn("fetchChapterData: no database");
+            return null;
+        }
         
         try {
             const rows: any[] = await db.select(
                 "SELECT title, body, link FROM chapters WHERE id = $1",
                 [chapterId]
             );
+            
+            console.log("fetchChapterData: chapter", chapterId, "rows:", rows.length);
+            
             if (rows.length === 0) {
                 console.warn("fetchChapterData: no data for chapter", chapterId);
                 return null;
@@ -126,12 +137,17 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
 
             let { title, body, link } = rows[0];
             
+            // Log content info
+            console.log("fetchChapterData: chapter", chapterId, "title:", title, "body length:", body?.length || 0);
+            
             // Log large content
             if (body && body.length > 1000000) {
                 console.warn("fetchChapterData: large chapter", chapterId, "size:", body.length);
             }
             
-            if (link && !body) body = "此章节内容为网络链接，当前版本已关闭网络解析功能。";
+            if (link && !body) {
+                body = "此章节内容为网络链接，当前版本已关闭网络解析功能。";
+            }
 
             // Apply replacement rules (limit to prevent slowdown)
             if (replacementRules.length > 0 && body && replacementRules.length < 100) {
@@ -149,7 +165,7 @@ export function useReader({ db, replacementRules }: UseReaderOptions) {
                 }
             }
 
-            return { id: chapterId, title, body, link };
+            return { id: chapterId, title, body: body || "", link };
         } catch (err) {
             console.error("fetchChapterData error for chapter", chapterId, ":", err);
             return null;

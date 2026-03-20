@@ -194,7 +194,7 @@ export default function ReaderView({
                 />
 
                 {/* Spinner */}
-                {loading && windowChapters.length === 0 ? (
+                {windowChapters.length === 0 ? (
                     <div className="flex items-center justify-center h-full">
                         <div className="animate-spin rounded-full h-12 w-12 border-4 border-indigo-500/10 border-t-indigo-500" />
                     </div>
