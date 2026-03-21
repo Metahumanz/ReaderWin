@@ -34,10 +34,10 @@ export default function ReaderMenu({
     onGoToChapter,
 }: ReaderMenuProps) {
     return (
-        <div className="fixed inset-0 z-[100] flex items-end justify-center pb-10 animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-50 flex items-end justify-center pb-10 animate-in fade-in duration-300">
             <div className="absolute inset-0 bg-black/40" onClick={onClose} />
             <div
-                className="relative w-full max-w-xl px-6 animate-in slide-in-from-bottom-8 duration-500 z-[101]"
+                className="relative w-full max-w-xl px-6 animate-in slide-in-from-bottom-8 duration-500 z-50"
                 onClick={(e: React.MouseEvent) => e.stopPropagation()}
             >
                 <div className="bg-slate-900/95 border border-white/10 rounded-[2rem] shadow-2xl p-6 space-y-5">

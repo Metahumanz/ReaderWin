@@ -19,7 +19,7 @@ export default function TocOverlay({
     onClose,
 }: TocOverlayProps) {
     return (
-        <div className="fixed inset-0 z-[110] flex animate-in fade-in duration-300">
+        <div className="fixed inset-0 z-50 flex animate-in fade-in duration-300">
             <div
                 className="absolute inset-0 bg-black/80 backdrop-blur-sm"
                 onClick={onClose}

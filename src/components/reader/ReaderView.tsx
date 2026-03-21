@@ -115,7 +115,7 @@ export default function ReaderView({
 
             {/* Top Nav */}
             <div
-                className={`h-16 bg-black/60 border-b border-white/5 flex items-center px-6 justify-between z-50 shrink-0 transition-transform duration-500 ${settings.immersiveMode && !readerMenuOpen ? "-translate-y-full" : "translate-y-0"
+                className={`h-16 bg-black/60 border-b border-white/5 flex items-center px-6 justify-between z-50 shrink-0 relative transition-transform duration-500 ${settings.immersiveMode && !readerMenuOpen ? "-translate-y-full" : "translate-y-0"
                     }`}
             >
                 <button
@@ -153,7 +153,7 @@ export default function ReaderView({
                 {/* Selection menu */}
                 {selectionMenu && (
                     <div
-                        className="fixed z-[120] -translate-x-1/2 -translate-y-full bg-slate-800 border border-white/10 rounded-xl shadow-2xl p-1 flex gap-1 animate-in zoom-in-95 duration-200"
+                        className="fixed z-50 -translate-x-1/2 -translate-y-full bg-slate-800 border border-white/10 rounded-xl shadow-2xl p-1 flex gap-1 animate-in zoom-in-95 duration-200"
                         style={{ left: selectionMenu.x, top: selectionMenu.y }}
                         onClick={(e: React.MouseEvent) => e.stopPropagation()}
                     >
@@ -175,7 +175,8 @@ export default function ReaderView({
 
                 {/* Click zones for page navigation */}
                 <div
-                    className="absolute inset-y-0 left-0 w-1/4 z-20 cursor-w-resize"
+                    className="absolute inset-y-0 left-0 w-1/4 cursor-w-resize"
+                    style={{ zIndex: 5 }}
                     onClick={(e: React.MouseEvent) => {
                         e.stopPropagation();
                         const viewer = viewerRef.current;
@@ -185,14 +186,16 @@ export default function ReaderView({
                     }}
                 />
                 <div
-                    className="absolute inset-x-1/4 inset-y-0 w-1/2 z-10 cursor-alias"
+                    className="absolute inset-x-1/4 inset-y-0 w-1/2 cursor-pointer"
+                    style={{ zIndex: 5 }}
                     onClick={(e: React.MouseEvent) => {
                         e.stopPropagation();
                         setReaderMenuOpen(!readerMenuOpen);
                     }}
                 />
                 <div
-                    className="absolute inset-y-0 right-0 w-1/4 z-20 cursor-e-resize"
+                    className="absolute inset-y-0 right-0 w-1/4 cursor-e-resize"
+                    style={{ zIndex: 5 }}
                     onClick={(e: React.MouseEvent) => {
                         e.stopPropagation();
                         const viewer = viewerRef.current;
@@ -316,7 +319,7 @@ export default function ReaderView({
 
             {/* Bottom Status Bar */}
             {!settings.immersiveMode || readerMenuOpen ? (
-                <div className="h-10 bg-black/40 backdrop-blur-3xl border-t border-white/5 flex items-center px-6 justify-between shrink-0 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                <div className="h-10 bg-black/40 backdrop-blur-3xl border-t border-white/5 flex items-center px-6 justify-between shrink-0 text-[10px] font-black text-slate-500 uppercase tracking-widest relative z-50">
                     <div>{clockTime}</div>
                     <div className="flex gap-4 text-indigo-500">
                         <span className="opacity-40">Chapter {currentChapterIndex + 1}</span>
